@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "panel",
+  "name": "Vectormap",
+  "id": "dander1234-vectormap-panel",
+  "info": {
+    "keywords": ["panel", "map", "maplibre", "vector-tiles", "geospatial"],
+    "description": "A MapLibre GL panel for Grafana: vector tiles (MVT) plus data-driven markers.",
+    "author": {
+      "name": "dander1234"
+    },
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "links": [],
+    "screenshots": [],
+    "version": "%VERSION%",
+    "updated": "%TODAY%"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=12.1.0",
+    "plugins": []
+  }
+}
