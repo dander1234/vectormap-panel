@@ -28,6 +28,11 @@ import { VectormapOptions } from '../types';
 // CSS into the page at runtime when the bundle loads.
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+// Stable ids for the single vector-tile source/layer this panel manages. Fixed
+// ids let a later effect run find and replace the previous version on edit.
+const VT_SOURCE_ID = 'vectormap-source';
+const VT_LAYER_ID = 'vectormap-layer';
+
 // PanelProps carries everything Grafana gives a panel: options, query data,
 // width/height (in pixels), the time range, and more. Typing it with our
 // VectormapOptions makes `props.options` strongly typed.
@@ -135,6 +140,112 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
       zoom: options.initialZoom,
     });
   }, [options.initialLat, options.initialLng, options.initialZoom]);
+
+  // EFFECT 4 — add / update the vector tile (MVT) overlay layer.
+  //
+  // Re-runs whenever any layer option changes, (re)building one vector source +
+  // draw layer on top of the basemap. Two MapLibre realities shape this code:
+  //   1. You cannot add a source/layer until the map's style has loaded — doing
+  //      so throws. On first mount the style is still loading, so we defer to the
+  //      'load' event; on later runs the style is ready and we apply at once.
+  //   2. There is no "update a source" call — you remove and re-add it. So we
+  //      always tear down our previous layer+source first, then add the current
+  //      config. (If we later switch basemaps via map.setStyle(), that wipes
+  //      these overlays — see docs/design-notes.md — and we'd re-add them on the
+  //      new style's load event.)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    const applyLayer = () => {
+      // Tear down any previous version. Order matters: a source cannot be
+      // removed while a layer still references it, so remove the layer first.
+      if (map.getLayer(VT_LAYER_ID)) {
+        map.removeLayer(VT_LAYER_ID);
+      }
+      if (map.getSource(VT_SOURCE_ID)) {
+        map.removeSource(VT_SOURCE_ID);
+      }
+
+      // Nothing to draw until both a tile URL and the in-tile source-layer name
+      // are provided. (Clearing either field removes the layer — handled above.)
+      if (!options.tileUrl || !options.sourceLayer) {
+        return;
+      }
+
+      map.addSource(VT_SOURCE_ID, {
+        type: 'vector',
+        // {z}/{x}/{y} template. Grafana variable interpolation arrives in Phase 6.
+        tiles: [options.tileUrl],
+        // 'tms' flips the Y axis for GeoServer GWC TMS endpoints; without it
+        // MapLibre requests mirrored (wrong) tiles.
+        scheme: options.tileScheme,
+      });
+
+      // Branch on geometry type so each addLayer call is correctly typed (line
+      // paint and fill paint are different shapes).
+      if (options.geometryType === 'fill') {
+        map.addLayer({
+          id: VT_LAYER_ID,
+          type: 'fill',
+          source: VT_SOURCE_ID,
+          'source-layer': options.sourceLayer,
+          paint: {
+            'fill-color': options.fillColor,
+            'fill-opacity': options.fillOpacity,
+          },
+        });
+      } else {
+        map.addLayer({
+          id: VT_LAYER_ID,
+          type: 'line',
+          source: VT_SOURCE_ID,
+          'source-layer': options.sourceLayer,
+          paint: {
+            'line-color': options.lineColor,
+            'line-width': options.lineWidth,
+          },
+        });
+      }
+
+      // Optional filter: parse the JSON the user typed. If it is invalid, warn
+      // and continue with no filter rather than breaking the whole layer.
+      if (options.filterExpression.trim()) {
+        try {
+          const filter = JSON.parse(options.filterExpression);
+          map.setFilter(VT_LAYER_ID, filter);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('[vectormap] Ignoring invalid filter expression:', err);
+        }
+      }
+    };
+
+    // Apply now if the style is ready; otherwise once it finishes loading.
+    if (map.isStyleLoaded()) {
+      applyLayer();
+    } else {
+      map.once('load', applyLayer);
+    }
+
+    // If this effect re-runs (or the component unmounts) before 'load' fired,
+    // drop the pending listener so a stale applyLayer doesn't run later.
+    return () => {
+      map.off('load', applyLayer);
+    };
+  }, [
+    options.tileUrl,
+    options.sourceLayer,
+    options.tileScheme,
+    options.geometryType,
+    options.lineColor,
+    options.lineWidth,
+    options.fillColor,
+    options.fillOpacity,
+    options.filterExpression,
+  ]);
 
   // Click handler for the "Set initial view" button. It reads the map's CURRENT
   // center and zoom and persists them as the panel's initial-view options via
