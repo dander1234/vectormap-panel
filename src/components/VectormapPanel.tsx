@@ -18,7 +18,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { PanelProps } from '@grafana/data';
-import { Button } from '@grafana/ui';
+import { Button, useTheme2 } from '@grafana/ui';
 import maplibregl from 'maplibre-gl';
 import { VectormapOptions } from '../types';
 
@@ -46,6 +46,10 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
   //    UI — changing it should not trigger a React re-render.
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  // Grafana's theme. We use it to resolve color-picker values (which may be
+  // named palette colors like 'dark-red', not CSS) into real CSS colors that
+  // MapLibre can parse.
+  const theme = useTheme2();
 
   // EFFECT 1 — create the map exactly once, on mount.
   //
@@ -175,51 +179,65 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
         return;
       }
 
-      map.addSource(VT_SOURCE_ID, {
-        type: 'vector',
-        // {z}/{x}/{y} template. Grafana variable interpolation arrives in Phase 6.
-        tiles: [options.tileUrl],
-        // 'tms' flips the Y axis for GeoServer GWC TMS endpoints; without it
-        // MapLibre requests mirrored (wrong) tiles.
-        scheme: options.tileScheme,
-      });
+      // Paint fallbacks. Grafana does not reliably populate a defaultValue for
+      // options that are hidden by showIf at the time, so when you switch
+      // geometry type these can arrive as `undefined`. Passing an undefined
+      // paint value (especially line-width) makes the layer invisible or makes
+      // addLayer reject it — hence the `??` guards.
+      // Resolve color-picker values to real CSS colors. getColorByName converts
+      // Grafana named palette colors (e.g. 'dark-red', 'semi-dark-orange') to
+      // hex, and passes plain hex/rgb strings through unchanged. MapLibre cannot
+      // parse the named values, so this step is what makes the picker work.
+      const lineColor = theme.visualization.getColorByName(options.lineColor ?? '#ff5722');
+      const lineWidth = options.lineWidth ?? 2;
+      const fillColor = theme.visualization.getColorByName(options.fillColor ?? '#3388ff');
+      const fillOpacity = options.fillOpacity ?? 0.4;
 
-      // Branch on geometry type so each addLayer call is correctly typed (line
-      // paint and fill paint are different shapes).
-      if (options.geometryType === 'fill') {
-        map.addLayer({
-          id: VT_LAYER_ID,
-          type: 'fill',
-          source: VT_SOURCE_ID,
-          'source-layer': options.sourceLayer,
-          paint: {
-            'fill-color': options.fillColor,
-            'fill-opacity': options.fillOpacity,
-          },
+      // Wrap the source/layer creation so any MapLibre style error is surfaced
+      // clearly to the browser console instead of failing silently.
+      try {
+        map.addSource(VT_SOURCE_ID, {
+          type: 'vector',
+          // {z}/{x}/{y} template. Grafana variable interpolation arrives in Phase 6.
+          tiles: [options.tileUrl],
+          // 'tms' flips the Y axis for GeoServer GWC TMS endpoints; without it
+          // MapLibre requests mirrored (wrong) tiles.
+          scheme: options.tileScheme,
         });
-      } else {
-        map.addLayer({
-          id: VT_LAYER_ID,
-          type: 'line',
-          source: VT_SOURCE_ID,
-          'source-layer': options.sourceLayer,
-          paint: {
-            'line-color': options.lineColor,
-            'line-width': options.lineWidth,
-          },
-        });
-      }
 
-      // Optional filter: parse the JSON the user typed. If it is invalid, warn
-      // and continue with no filter rather than breaking the whole layer.
-      if (options.filterExpression.trim()) {
-        try {
-          const filter = JSON.parse(options.filterExpression);
-          map.setFilter(VT_LAYER_ID, filter);
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn('[vectormap] Ignoring invalid filter expression:', err);
+        // Branch on geometry type so each addLayer call is correctly typed (line
+        // paint and fill paint are different shapes).
+        if (options.geometryType === 'fill') {
+          map.addLayer({
+            id: VT_LAYER_ID,
+            type: 'fill',
+            source: VT_SOURCE_ID,
+            'source-layer': options.sourceLayer,
+            paint: { 'fill-color': fillColor, 'fill-opacity': fillOpacity },
+          });
+        } else {
+          map.addLayer({
+            id: VT_LAYER_ID,
+            type: 'line',
+            source: VT_SOURCE_ID,
+            'source-layer': options.sourceLayer,
+            paint: { 'line-color': lineColor, 'line-width': lineWidth },
+          });
         }
+
+        // Optional filter: parse the JSON the user typed. If invalid, warn and
+        // continue with no filter rather than breaking the whole layer.
+        if (options.filterExpression.trim()) {
+          try {
+            map.setFilter(VT_LAYER_ID, JSON.parse(options.filterExpression));
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn('[vectormap] Ignoring invalid filter expression:', err);
+          }
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[vectormap] Failed to add vector tile layer:', err);
       }
     };
 
@@ -245,6 +263,7 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
     options.fillColor,
     options.fillOpacity,
     options.filterExpression,
+    theme,
   ]);
 
   // Click handler for the "Set initial view" button. It reads the map's CURRENT
