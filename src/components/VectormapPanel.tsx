@@ -9,8 +9,8 @@ import { PanelProps, GrafanaTheme2, DataFrame } from '@grafana/data';
 import { Button, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import maplibregl from 'maplibre-gl';
-import { VectormapOptions, BasemapKind, VectorTileLayerConfig } from '../types';
-import { LayerControl } from './LayerControl';
+import { VectormapOptions, BasemapKind, VectorTileLayerConfig, MarkerLayerConfig } from '../types';
+import { LayerControl, ControlLayer } from './LayerControl';
 
 // MapLibre's stylesheet (positions canvas + controls). webpack's style-loader
 // injects it at runtime.
@@ -28,10 +28,13 @@ const layerIdFor = (layerId: string) => VT_LAYER_PREFIX + layerId;
 const BASEMAP_SOURCE_ID = 'basemap';
 const BASEMAP_LAYER_ID = 'basemap';
 
-// Markers built from the panel's query data live in one GeoJSON source + circle
-// layer, kept on top of the vector tile overlays.
-const MARKERS_SOURCE_ID = 'markers-src';
-const MARKERS_LAYER_ID = 'markers-layer';
+// Each marker layer (built from the panel's query data) becomes its own GeoJSON
+// source + circle layer, derived from the marker layer's stable id, kept on top
+// of the vector tile overlays.
+const MK_SOURCE_PREFIX = 'mk-src-';
+const MK_LAYER_PREFIX = 'mk-layer-';
+const mkSourceIdFor = (id: string) => MK_SOURCE_PREFIX + id;
+const mkLayerIdFor = (id: string) => MK_LAYER_PREFIX + id;
 const LAT_NAMES = ['latitude', 'lat', 'y'];
 const LNG_NAMES = ['longitude', 'long', 'lng', 'lon', 'x'];
 
@@ -175,30 +178,28 @@ const pickField = (frame: DataFrame, explicit: string, fallbacks: string[]) =>
     ? frame.fields.find((f) => f.name === explicit)
     : frame.fields.find((f) => fallbacks.includes(f.name.toLowerCase()));
 
-// The subset of options the marker builder needs (keeps the effect's deps tight).
-type MarkerOptions = Pick<
-  VectormapOptions,
-  'latField' | 'lngField' | 'markerColorField' | 'markerFixedColor' | 'markerSizeField' | 'markerSize' | 'markerSizeMax'
->;
-
-// Build a GeoJSON FeatureCollection of markers from the panel's data frames
-// (works with any datasource — SQL, InfluxDB, …). Color comes from the chosen
-// field's STANDARD config (field.display → thresholds / color scheme); size from
-// a numeric field scaled into [markerSize, markerSizeMax]. Each feature keeps all
-// the row's values as properties (for the tooltip). Returns `any` to avoid the
-// GeoJSON type imports — it's a valid FeatureCollection at runtime.
-const buildMarkerFeatures = (series: DataFrame[], opts: MarkerOptions, resolveColor: (c: string) => string): any => {
+// Build a GeoJSON FeatureCollection of markers for ONE marker layer from the
+// panel's data frames (works with any datasource — SQL, InfluxDB, …). The layer
+// may be bound to a single query via `refId` (else every frame is read). Color
+// comes from the chosen field's STANDARD config (field.display → value mappings /
+// thresholds / color scheme); size from a numeric field scaled into
+// [size, sizeMax]. Each feature keeps all the row's values as properties (for the
+// tooltip). Returns `any` to avoid the GeoJSON type imports — it's a valid
+// FeatureCollection at runtime.
+const buildMarkerFeatures = (series: DataFrame[], cfg: MarkerLayerConfig, resolveColor: (c: string) => string): any => {
   const features: any[] = [];
-  const fixedColor = resolveColor(opts.markerFixedColor || '#1f77b4');
+  const fixedColor = resolveColor(cfg.fixedColor || '#1f77b4');
+  // Restrict to the bound query if one is set; otherwise read every frame.
+  const frames = cfg.refId ? series.filter((f) => f.refId === cfg.refId) : series;
 
-  for (const frame of series) {
-    const latField = pickField(frame, opts.latField, LAT_NAMES);
-    const lngField = pickField(frame, opts.lngField, LNG_NAMES);
+  for (const frame of frames) {
+    const latField = pickField(frame, cfg.latField, LAT_NAMES);
+    const lngField = pickField(frame, cfg.lngField, LNG_NAMES);
     if (!latField || !lngField) {
       continue;
     }
-    const colorField = opts.markerColorField ? frame.fields.find((f) => f.name === opts.markerColorField) : undefined;
-    const sizeField = opts.markerSizeField ? frame.fields.find((f) => f.name === opts.markerSizeField) : undefined;
+    const colorField = cfg.colorField ? frame.fields.find((f) => f.name === cfg.colorField) : undefined;
+    const sizeField = cfg.sizeField ? frame.fields.find((f) => f.name === cfg.sizeField) : undefined;
 
     // Range of the size field, for linear scaling.
     let sMin = Infinity;
@@ -227,12 +228,12 @@ const buildMarkerFeatures = (series: DataFrame[], opts: MarkerOptions, resolveCo
           color = c;
         }
       }
-      // Size: scale the size field into [markerSize, markerSizeMax], else fixed.
-      let radius = opts.markerSize;
+      // Size: scale the size field into [size, sizeMax], else fixed.
+      let radius = cfg.size;
       if (sizeField && sMax > sMin) {
         const n = Number(sizeField.values[i]);
         const t = Number.isFinite(n) ? (n - sMin) / (sMax - sMin) : 0;
-        radius = opts.markerSize + t * (opts.markerSizeMax - opts.markerSize);
+        radius = cfg.size + t * (cfg.sizeMax - cfg.size);
       }
       const properties: Record<string, unknown> = {};
       for (const f of frame.fields) {
@@ -263,20 +264,22 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
   // colors — through this ref rather than a stale closure.
   const renderRef = useRef<{
     layers: VectorTileLayerConfig[];
+    markerLayers: MarkerLayerConfig[];
     popupClass: string;
     keyColor: string;
     titleColor: string;
     mutedColor: string;
-  }>({ layers: [], popupClass: '', keyColor: '#888', titleColor: '#222', mutedColor: '#aaa' });
+  }>({ layers: [], markerLayers: [], popupClass: '', keyColor: '#888', titleColor: '#222', mutedColor: '#aaa' });
   useEffect(() => {
     renderRef.current = {
       layers: options.layers ?? [],
+      markerLayers: options.markerLayers ?? [],
       popupClass: popupStyles.popup,
       keyColor: theme.colors.text.secondary,
       titleColor: theme.colors.text.primary,
       mutedColor: theme.colors.text.disabled,
     };
-  }, [options.layers, popupStyles.popup, theme]);
+  }, [options.layers, options.markerLayers, popupStyles.popup, theme]);
 
   // Runtime layer visibility (driven by the on-map LayerControl). Keyed by
   // layer.id. We also mirror it in a ref so the layer-build effect can read the
@@ -339,10 +342,10 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
         return; // 'none' (or custom with empty URL) — leave just the background
       }
       map.addSource(BASEMAP_SOURCE_ID, spec);
-      // Insert below the first overlay (vector tile layer or markers) so all
+      // Insert below the first overlay (vector tile layer or marker layer) so all
       // overlays stay on top of the basemap.
       const firstOverlay = (map.getStyle().layers ?? []).find(
-        (l) => l.id.startsWith(VT_LAYER_PREFIX) || l.id === MARKERS_LAYER_ID
+        (l) => l.id.startsWith(VT_LAYER_PREFIX) || l.id.startsWith(MK_LAYER_PREFIX)
       )?.id;
       map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_SOURCE_ID }, firstOverlay);
     };
@@ -463,10 +466,12 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
           console.error(`[vectormap] failed to add layer "${layer.name}":`, err);
         }
       }
-      // Keep data markers above the (re-added) vector tile overlays.
-      if (map.getLayer(MARKERS_LAYER_ID)) {
-        map.moveLayer(MARKERS_LAYER_ID);
-      }
+      // Keep all marker layers above the (re-added) vector tile overlays.
+      (map.getStyle().layers ?? []).forEach((l) => {
+        if (l.id.startsWith(MK_LAYER_PREFIX)) {
+          map.moveLayer(l.id);
+        }
+      });
     };
 
     if (map.isStyleLoaded()) {
@@ -479,45 +484,60 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
     };
   }, [options.layers, theme]);
 
-  // EFFECT M — build/update the data markers (one GeoJSON source + circle layer)
-  // from the panel's query results. Uses the source's setData to update
-  // efficiently on each refresh; kept on top of the vector tile overlays.
+  // EFFECT M — reconcile the marker layers (one GeoJSON source + circle layer per
+  // configured marker layer) against the panel's query results. For each layer we
+  // setData on its existing source (cheap refresh) or add it; sources/layers for
+  // marker layers that were deleted are removed. Kept on top of the tile overlays.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) {
       return;
     }
     const applyMarkers = () => {
-      const markerOpts: MarkerOptions = {
-        latField: options.latField,
-        lngField: options.lngField,
-        markerColorField: options.markerColorField,
-        markerFixedColor: options.markerFixedColor,
-        markerSizeField: options.markerSizeField,
-        markerSize: options.markerSize,
-        markerSizeMax: options.markerSizeMax,
-      };
-      const fc = buildMarkerFeatures(data?.series ?? [], markerOpts, theme.visualization.getColorByName);
-      const existing = map.getSource(MARKERS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-      if (existing) {
-        existing.setData(fc);
-      } else {
-        // generateId assigns numeric feature ids so feature-state highlight works.
-        map.addSource(MARKERS_SOURCE_ID, { type: 'geojson', data: fc, generateId: true });
-        map.addLayer({
-          id: MARKERS_LAYER_ID,
-          type: 'circle',
-          source: MARKERS_SOURCE_ID,
-          paint: {
-            // Per-feature color/radius come from the GeoJSON properties we computed.
-            'circle-color': whenHighlighted(HIGHLIGHT_COLOR, ['get', '__color']),
-            'circle-radius': whenHighlighted(['+', ['get', '__radius'], 3], ['get', '__radius']),
-            'circle-stroke-width': 1,
-            'circle-stroke-color': '#ffffff',
-          },
-        });
+      const cfgs = options.markerLayers ?? [];
+      const desiredLayerIds = new Set(cfgs.map((l) => mkLayerIdFor(l.id)));
+      const desiredSourceIds = new Set(cfgs.map((l) => mkSourceIdFor(l.id)));
+
+      // Drop marker layers/sources whose config was removed.
+      const style = map.getStyle();
+      (style.layers ?? []).forEach((l) => {
+        if (l.id.startsWith(MK_LAYER_PREFIX) && !desiredLayerIds.has(l.id)) {
+          map.removeLayer(l.id);
+        }
+      });
+      Object.keys(style.sources ?? {}).forEach((s) => {
+        if (s.startsWith(MK_SOURCE_PREFIX) && !desiredSourceIds.has(s)) {
+          map.removeSource(s);
+        }
+      });
+
+      for (const cfg of cfgs) {
+        const sId = mkSourceIdFor(cfg.id);
+        const lId = mkLayerIdFor(cfg.id);
+        const fc = buildMarkerFeatures(data?.series ?? [], cfg, theme.visualization.getColorByName);
+        const existing = map.getSource(sId) as maplibregl.GeoJSONSource | undefined;
+        if (existing) {
+          existing.setData(fc);
+        } else {
+          // generateId assigns numeric feature ids so feature-state highlight works.
+          map.addSource(sId, { type: 'geojson', data: fc, generateId: true });
+          map.addLayer({
+            id: lId,
+            type: 'circle',
+            source: sId,
+            paint: {
+              // Per-feature color/radius come from the GeoJSON properties we computed.
+              'circle-color': whenHighlighted(HIGHLIGHT_COLOR, ['get', '__color']),
+              'circle-radius': whenHighlighted(['+', ['get', '__radius'], 3], ['get', '__radius']),
+              'circle-stroke-width': 1,
+              'circle-stroke-color': '#ffffff',
+            },
+          });
+        }
+        // Initial visibility from the live runtime override (ref), else the config.
+        const desiredVisible = visibilityRef.current[cfg.id] ?? cfg.visible !== false;
+        map.setLayoutProperty(lId, 'visibility', desiredVisible ? 'visible' : 'none');
       }
-      map.setLayoutProperty(MARKERS_LAYER_ID, 'visibility', options.showMarkers ? 'visible' : 'none');
     };
     if (map.isStyleLoaded()) {
       applyMarkers();
@@ -527,18 +547,7 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
     return () => {
       map.off('load', applyMarkers);
     };
-  }, [
-    data,
-    options.showMarkers,
-    options.latField,
-    options.lngField,
-    options.markerColorField,
-    options.markerFixedColor,
-    options.markerSizeField,
-    options.markerSize,
-    options.markerSizeMax,
-    theme,
-  ]);
+  }, [data, options.markerLayers, theme]);
 
   // EFFECT 5 — feature interactivity across ALL vector tile layers.
   useEffect(() => {
@@ -546,13 +555,10 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
     if (!map) {
       return;
     }
-    const ourLayerIds = (): string[] => {
-      const ids = (map.getStyle().layers ?? []).map((l) => l.id).filter((id) => id.startsWith(VT_LAYER_PREFIX));
-      if (map.getLayer(MARKERS_LAYER_ID)) {
-        ids.push(MARKERS_LAYER_ID);
-      }
-      return ids;
-    };
+    const ourLayerIds = (): string[] =>
+      (map.getStyle().layers ?? [])
+        .map((l) => l.id)
+        .filter((id) => id.startsWith(VT_LAYER_PREFIX) || id.startsWith(MK_LAYER_PREFIX));
 
     const clearHighlight = () => {
       if (highlightRef.current) {
@@ -581,10 +587,17 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
       map.setFeatureState(target, { highlighted: true });
       highlightRef.current = target;
 
-      // Resolve the clicked feature's LAYER to pick up its per-layer tooltip rules
-      // (markers won't match a layer config and fall back to defaults).
-      const layerCfgId = String(f.layer?.id ?? '').slice(VT_LAYER_PREFIX.length);
-      const layerCfg = renderRef.current.layers.find((l) => l.id === layerCfgId);
+      // Resolve the clicked feature's LAYER to pick up its per-layer tooltip
+      // rules — searching both the tile layers and the marker layers, since the
+      // click can land on either. Both config shapes carry the same tooltip
+      // fields, so the same lookup works for both.
+      const clickedId = String(f.layer?.id ?? '');
+      const layerCfg: Pick<
+        VectorTileLayerConfig,
+        'tooltipHideEmpty' | 'tooltipInclude' | 'tooltipExclude' | 'tooltipTitleField'
+      > | undefined = clickedId.startsWith(MK_LAYER_PREFIX)
+        ? renderRef.current.markerLayers.find((l) => l.id === clickedId.slice(MK_LAYER_PREFIX.length))
+        : renderRef.current.layers.find((l) => l.id === clickedId.slice(VT_LAYER_PREFIX.length));
       const cfg: TooltipRenderConfig = {
         hideEmpty: layerCfg?.tooltipHideEmpty ?? true,
         include: layerCfg?.tooltipInclude ?? '',
@@ -619,13 +632,22 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
   }, []);
 
   // Toggle a layer's visibility from the LayerControl: update state + flip the
-  // MapLibre layout property immediately.
+  // MapLibre layout property immediately. The id may belong to a tile layer or a
+  // marker layer (different MapLibre layer-id prefixes), so flip whichever exists.
   const handleToggle = (layerId: string, visible: boolean) => {
     setVisibility((prev) => ({ ...prev, [layerId]: visible }));
     const map = mapRef.current;
-    const lId = layerIdFor(layerId);
-    if (map?.getLayer(lId)) {
-      map.setLayoutProperty(lId, 'visibility', visible ? 'visible' : 'none');
+    if (!map) {
+      return;
+    }
+    const vis: 'visible' | 'none' = visible ? 'visible' : 'none';
+    const vtId = layerIdFor(layerId);
+    const mkId = mkLayerIdFor(layerId);
+    if (map.getLayer(vtId)) {
+      map.setLayoutProperty(vtId, 'visibility', vis);
+    }
+    if (map.getLayer(mkId)) {
+      map.setLayoutProperty(mkId, 'visibility', vis);
     }
   };
 
@@ -645,10 +667,36 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
     });
   };
 
+  // Build the unified layer-control list: drawable tile layers plus all marker
+  // layers, each normalized to { id, name, group, color }. The swatch color is
+  // the geometry's paint color for tile layers, or the fixed color for markers.
+  const controlLayers: ControlLayer[] = [
+    ...(options.layers ?? [])
+      .filter((l) => l.tileUrl && l.sourceLayer) // only actually-drawable tile layers
+      .map((l) => ({
+        id: l.id,
+        name: l.name,
+        group: l.group,
+        color:
+          l.geometryType === 'fill'
+            ? l.fillColor || '#3388ff'
+            : l.geometryType === 'circle'
+              ? l.circleColor || '#1f77b4'
+              : l.lineColor || '#ff5722',
+      })),
+    ...(options.markerLayers ?? []).map((l) => ({
+      id: l.id,
+      name: l.name,
+      group: l.group,
+      color: l.fixedColor || '#1f77b4',
+    })),
+  ];
+
   // Effective visibility shown in the LayerControl = explicit override, else the
-  // layer's configured default. Derived during render (no state/effect needed).
+  // layer's configured default. Derived during render (no state/effect needed),
+  // across both tile layers and marker layers.
   const effectiveVisibility: Record<string, boolean> = {};
-  for (const l of options.layers ?? []) {
+  for (const l of [...(options.layers ?? []), ...(options.markerLayers ?? [])]) {
     effectiveVisibility[l.id] = visibility[l.id] ?? l.visible !== false;
   }
 
@@ -665,7 +713,7 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
           Set initial view
         </Button>
       </div>
-      <LayerControl layers={options.layers ?? []} visibility={effectiveVisibility} onToggle={handleToggle} />
+      <LayerControl layers={controlLayers} visibility={effectiveVisibility} onToggle={handleToggle} />
     </div>
   );
 };

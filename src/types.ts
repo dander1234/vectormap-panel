@@ -50,6 +50,39 @@ export interface VectorTileLayerConfig {
   tooltipTitleField: string; // field shown as a bold header (optional)
 }
 
+// One "marker layer" built from the panel's QUERY data (SQL, InfluxDB, …)
+// rather than from vector tiles. Each becomes its own GeoJSON source + circle
+// layer and shows up in the on-map layer control exactly like a tile layer, so
+// it can be grouped, toggled, and tooltip-formatted independently. This is the
+// "lookups as layers" model: one marker layer per query/result set.
+export interface MarkerLayerConfig {
+  // Stable unique id (React keys + MapLibre source/layer ids). Never shown.
+  id: string;
+  name: string; // display name (shown in the layer control)
+  group: string; // optional group heading in the layer control ('' = ungrouped)
+  visible: boolean; // initial visibility
+
+  // Which query to read points from, by its refId (the A/B/C letter in the
+  // Query tab). '' = read from every returned frame. Binding a marker layer to
+  // one refId lets you have e.g. "Subscribers" (query A) and "ONTs" (query B)
+  // as two separate, independently styled layers.
+  refId: string;
+
+  latField: string; // field name; '' = auto-detect by common names (lat/latitude/y)
+  lngField: string; // field name; '' = auto-detect (lng/long/longitude/lon/x)
+  colorField: string; // field whose standard config drives color; '' = fixed color
+  fixedColor: string; // used when no color field is chosen
+  sizeField: string; // numeric field to scale radius; '' = fixed size
+  size: number; // base radius (px); also the min when scaling by a field
+  sizeMax: number; // max radius (px) when scaling by sizeField
+
+  // Feature-click tooltip content controls (same model as tile layers).
+  tooltipHideEmpty: boolean;
+  tooltipInclude: string;
+  tooltipExclude: string;
+  tooltipTitleField: string;
+}
+
 export interface VectormapOptions {
   // Initial map view (WGS84 degrees + zoom) used when the panel first loads.
   initialLat: number;
@@ -60,19 +93,12 @@ export interface VectormapOptions {
   basemap: BasemapKind;
   basemapUrl: string; // XYZ raster template, used only when basemap === 'custom'
 
-  // --- Markers from panel query data (works with any datasource: SQL, InfluxDB,
-  // ...). Points are read from the data frames' lat/long fields. ---
-  showMarkers: boolean;
-  latField: string; // field name; '' = auto-detect by common names
-  lngField: string; // field name; '' = auto-detect
-  markerColorField: string; // field whose standard config drives color; '' = fixed
-  markerFixedColor: string; // used when no color field
-  markerSizeField: string; // numeric field to scale radius; '' = fixed size
-  markerSize: number; // base radius (px); also the min when scaling by a field
-  markerSizeMax: number; // max radius (px) when scaling by markerSizeField
-
   // The vector tile layers to render, top-most last.
   layers: VectorTileLayerConfig[];
+
+  // Marker layers built from query data (SQL/InfluxDB/…). Drawn above the tile
+  // layers; each appears in the layer control alongside them.
+  markerLayers: MarkerLayerConfig[];
 }
 
 // Factory for a fresh layer with sensible defaults and a unique id. Used both by
@@ -96,6 +122,29 @@ export function createDefaultLayer(): VectorTileLayerConfig {
     circleColor: '#1f77b4',
     circleRadius: 5,
     filterExpression: '',
+    tooltipHideEmpty: true,
+    tooltipInclude: '',
+    tooltipExclude: '',
+    tooltipTitleField: '',
+  };
+}
+
+// Factory for a fresh marker layer with sensible defaults and a unique id. Used
+// by the marker-layers editor's Add button.
+export function createDefaultMarkerLayer(): MarkerLayerConfig {
+  return {
+    id: 'mlayer-' + Math.random().toString(36).slice(2, 9),
+    name: 'New marker layer',
+    group: '',
+    visible: true,
+    refId: '',
+    latField: '',
+    lngField: '',
+    colorField: '',
+    fixedColor: '#1f77b4',
+    sizeField: '',
+    size: 6,
+    sizeMax: 18,
     tooltipHideEmpty: true,
     tooltipInclude: '',
     tooltipExclude: '',

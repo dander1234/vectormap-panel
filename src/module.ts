@@ -8,10 +8,10 @@ import { PanelPlugin } from '@grafana/data';
 import { VectormapOptions, createDefaultLayer } from './types';
 import { VectormapPanel } from './components/VectormapPanel';
 import { LayersEditor } from './components/LayersEditor';
+import { MarkerLayersEditor } from './components/MarkerLayersEditor';
 
 const VIEW = ['Map view'];
 const BASEMAP = ['Basemap'];
-const MARKERS = ['Markers (from data)'];
 
 export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanelOptions((builder) => {
   return (
@@ -67,48 +67,17 @@ export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanel
         category: BASEMAP,
         showIf: (opts) => opts.basemap === 'custom',
       })
-      // --- Markers from query data ---
-      .addBooleanSwitch({ path: 'showMarkers', name: 'Show markers', defaultValue: true, category: MARKERS })
-      .addFieldNamePicker({
-        path: 'latField',
-        name: 'Latitude field',
-        description: 'Field holding latitude (WGS84). Blank = auto-detect (lat / latitude).',
-        category: MARKERS,
-      })
-      .addFieldNamePicker({
-        path: 'lngField',
-        name: 'Longitude field',
-        description: 'Field holding longitude. Blank = auto-detect (lng / long / longitude).',
-        category: MARKERS,
-      })
-      .addFieldNamePicker({
-        path: 'markerColorField',
-        name: 'Color by field',
-        description: "Marker color from this field's standard config (thresholds / color scheme). Blank = fixed color.",
-        category: MARKERS,
-      })
-      .addColorPicker({ path: 'markerFixedColor', name: 'Fixed color', defaultValue: '#1f77b4', category: MARKERS })
-      .addFieldNamePicker({
-        path: 'markerSizeField',
-        name: 'Size by field',
-        description: 'Numeric field to scale marker radius. Blank = fixed size.',
-        category: MARKERS,
-      })
-      .addNumberInput({
-        path: 'markerSize',
-        name: 'Marker size',
-        description: 'Radius in px (base size; the minimum when scaling by a field).',
-        defaultValue: 6,
-        settings: { min: 1, max: 50, step: 1 },
-        category: MARKERS,
-      })
-      .addNumberInput({
-        path: 'markerSizeMax',
-        name: 'Max marker size',
-        description: 'Maximum radius (px) when scaling by a field.',
-        defaultValue: 18,
-        settings: { min: 1, max: 80, step: 1 },
-        category: MARKERS,
+      // --- Marker layers (from query data) ---
+      // Markers built from SQL/InfluxDB/… results. Like the tile layers, this is
+      // an array of objects, so it needs a custom editor (with a category, or it
+      // won't mount — same Grafana quirk as the layers editor below).
+      .addCustomEditor({
+        category: ['Marker layers (from data)'],
+        id: 'markerLayers',
+        path: 'markerLayers',
+        name: '',
+        editor: MarkerLayersEditor,
+        defaultValue: [],
       })
       // --- Vector tile layers ---
       // (Per-layer tooltip controls live inside the LayersEditor.)
