@@ -17,7 +17,7 @@ import {
   MarkerColorMode,
   TooltipLink,
 } from '../types';
-import { LayerControl, ControlLayer } from './LayerControl';
+import { LayerControl, ControlLayer, LegendShape } from './LayerControl';
 import { ensureShapeIcon, iconIdForShape, SHAPE_ICON_EFFECTIVE } from '../shapeIcons';
 
 // MapLibre's stylesheet (positions canvas + controls). webpack's style-loader
@@ -874,6 +874,8 @@ export const VectormapPanel: React.FC<Props> = ({
         id: l.id,
         name: l.name,
         group: l.group,
+        // Legend icon matches the geometry: line=bar, fill=square, circle=dot.
+        shape: (l.geometryType === 'fill' ? 'square' : l.geometryType === 'circle' ? 'circle' : 'line') as LegendShape,
         color:
           l.geometryType === 'fill'
             ? l.fillColor || '#3388ff'
@@ -885,6 +887,7 @@ export const VectormapPanel: React.FC<Props> = ({
       id: l.id,
       name: l.name,
       group: l.group,
+      shape: (l.shape ?? 'circle') as LegendShape, // legend matches the marker shape
       color: l.fixedColor || '#1f77b4',
     })),
   ];

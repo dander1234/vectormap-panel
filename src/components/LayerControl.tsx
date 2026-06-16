@@ -11,6 +11,12 @@ import React from 'react';
 import { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
+import { MarkerShape } from '../types';
+
+// Icon drawn next to a layer in the legend. Marker layers use their MarkerShape
+// so the legend matches the map; vector tile layers use 'line' (a bar) or a
+// 'square'/'circle' for fill/circle geometry.
+export type LegendShape = MarkerShape | 'line';
 
 // One entry in the control, regardless of whether it's a tile or marker layer.
 export interface ControlLayer {
@@ -18,7 +24,84 @@ export interface ControlLayer {
   name: string; // display name
   group: string; // group heading ('' = ungrouped)
   color: string; // swatch color (may be a Grafana named palette color)
+  shape: LegendShape; // legend icon shape (matches what's drawn on the map)
 }
+
+// --- Legend icon -----------------------------------------------------------
+// SVG points for a regular n-gon (first vertex at startDeg; -90 = pointing up).
+const polyPoints = (n: number, startDeg: number, r: number, cx = 8, cy = 8): string =>
+  Array.from({ length: n }, (_, i) => {
+    const a = ((startDeg + (i * 360) / n) * Math.PI) / 180;
+    return `${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`;
+  }).join(' ');
+
+// SVG points for a 5-point star.
+const starPoints = (cx = 8, cy = 8, ro = 7, ri = 3): string =>
+  Array.from({ length: 10 }, (_, i) => {
+    const r = i % 2 ? ri : ro;
+    const a = ((-90 + i * 36) * Math.PI) / 180;
+    return `${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`;
+  }).join(' ');
+
+// A small SVG icon matching the shape drawn on the map, filled with the layer's
+// color. This is what makes the legend match the markers (the bug fix).
+const ShapeSwatch: React.FC<{ shape: LegendShape; color: string }> = ({ shape, color }) => {
+  const common = { width: 14, height: 14, viewBox: '0 0 16 16', style: { flexShrink: 0, display: 'block' } };
+  switch (shape) {
+    case 'square':
+      return (
+        <svg {...common}>
+          <rect x="2" y="2" width="12" height="12" rx="1" fill={color} />
+        </svg>
+      );
+    case 'triangle':
+      return (
+        <svg {...common}>
+          <polygon points={polyPoints(3, -90, 7.5)} fill={color} />
+        </svg>
+      );
+    case 'diamond':
+      return (
+        <svg {...common}>
+          <polygon points={polyPoints(4, -90, 7)} fill={color} />
+        </svg>
+      );
+    case 'hexagon':
+      return (
+        <svg {...common}>
+          <polygon points={polyPoints(6, -90, 7)} fill={color} />
+        </svg>
+      );
+    case 'star':
+      return (
+        <svg {...common}>
+          <polygon points={starPoints()} fill={color} />
+        </svg>
+      );
+    case 'cross':
+      return (
+        <svg {...common}>
+          <polygon
+            points="5.6,1.5 10.4,1.5 10.4,5.6 14.5,5.6 14.5,10.4 10.4,10.4 10.4,14.5 5.6,14.5 5.6,10.4 1.5,10.4 1.5,5.6 5.6,5.6"
+            fill={color}
+          />
+        </svg>
+      );
+    case 'line':
+      return (
+        <svg {...common}>
+          <rect x="1" y="6.5" width="14" height="3" rx="1.5" fill={color} />
+        </svg>
+      );
+    case 'circle':
+    default:
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="6.5" fill={color} />
+        </svg>
+      );
+  }
+};
 
 interface Props {
   layers: ControlLayer[];
@@ -59,10 +142,7 @@ export const LayerControl: React.FC<Props> = ({ layers, visibility, onToggle }) 
                 checked={visibility[layer.id] !== false}
                 onChange={(e) => onToggle(layer.id, e.currentTarget.checked)}
               />
-              <span
-                className={styles.swatch}
-                style={{ backgroundColor: theme.visualization.getColorByName(layer.color) }}
-              />
+              <ShapeSwatch shape={layer.shape} color={theme.visualization.getColorByName(layer.color)} />
               <span className={styles.name}>{layer.name || layer.id}</span>
             </label>
           ))}
@@ -95,6 +175,5 @@ const getStyles = (theme: GrafanaTheme2) => ({
     marginTop: theme.spacing(0.5),
   }),
   item: css({ display: 'flex', alignItems: 'center', gap: theme.spacing(0.5), cursor: 'pointer', lineHeight: 1.8 }),
-  swatch: css({ display: 'inline-block', width: 12, height: 12, borderRadius: 2, flexShrink: 0 }),
   name: css({ whiteSpace: 'nowrap' }),
 });
