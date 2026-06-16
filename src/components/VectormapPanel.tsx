@@ -9,7 +9,7 @@ import { PanelProps, GrafanaTheme2 } from '@grafana/data';
 import { Button, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import maplibregl from 'maplibre-gl';
-import { VectormapOptions, BasemapKind } from '../types';
+import { VectormapOptions, BasemapKind, VectorTileLayerConfig } from '../types';
 import { LayerControl } from './LayerControl';
 
 // MapLibre's stylesheet (positions canvas + controls). webpack's style-loader
@@ -171,33 +171,25 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
   // Theme-aware CSS class for the popup container (see getPopupStyles).
   const popupStyles = useStyles2(getPopupStyles);
 
-  // The click handler is bound once (EFFECT 5), so it reads the live tooltip
-  // config/style through this ref rather than a stale closure.
-  const tooltipRef = useRef<{ cfg: TooltipRenderConfig; popupClass: string }>({
-    cfg: { hideEmpty: true, include: '', exclude: '', titleField: '', keyColor: '#888', titleColor: '#222', mutedColor: '#aaa' },
-    popupClass: '',
-  });
+  // The click handler is bound once (EFFECT 5), so it reads live data — the layer
+  // configs (for per-layer tooltip rules), the themed popup class, and theme
+  // colors — through this ref rather than a stale closure.
+  const renderRef = useRef<{
+    layers: VectorTileLayerConfig[];
+    popupClass: string;
+    keyColor: string;
+    titleColor: string;
+    mutedColor: string;
+  }>({ layers: [], popupClass: '', keyColor: '#888', titleColor: '#222', mutedColor: '#aaa' });
   useEffect(() => {
-    tooltipRef.current = {
-      cfg: {
-        hideEmpty: options.tooltipHideEmpty,
-        include: options.tooltipInclude,
-        exclude: options.tooltipExclude,
-        titleField: options.tooltipTitleField,
-        keyColor: theme.colors.text.secondary,
-        titleColor: theme.colors.text.primary,
-        mutedColor: theme.colors.text.disabled,
-      },
+    renderRef.current = {
+      layers: options.layers ?? [],
       popupClass: popupStyles.popup,
+      keyColor: theme.colors.text.secondary,
+      titleColor: theme.colors.text.primary,
+      mutedColor: theme.colors.text.disabled,
     };
-  }, [
-    options.tooltipHideEmpty,
-    options.tooltipInclude,
-    options.tooltipExclude,
-    options.tooltipTitleField,
-    theme,
-    popupStyles.popup,
-  ]);
+  }, [options.layers, popupStyles.popup, theme]);
 
   // Runtime layer visibility (driven by the on-map LayerControl). Keyed by
   // layer.id. We also mirror it in a ref so the layer-build effect can read the
@@ -425,8 +417,19 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
       map.setFeatureState(target, { highlighted: true });
       highlightRef.current = target;
 
-      const { cfg, popupClass } = tooltipRef.current;
-      const popup = new maplibregl.Popup({ maxWidth: '360px', closeOnClick: false, className: popupClass })
+      // Resolve the clicked feature's LAYER to pick up its per-layer tooltip rules.
+      const layerCfgId = String(f.layer?.id ?? '').slice(VT_LAYER_PREFIX.length);
+      const layerCfg = renderRef.current.layers.find((l) => l.id === layerCfgId);
+      const cfg: TooltipRenderConfig = {
+        hideEmpty: layerCfg?.tooltipHideEmpty ?? true,
+        include: layerCfg?.tooltipInclude ?? '',
+        exclude: layerCfg?.tooltipExclude ?? '',
+        titleField: layerCfg?.tooltipTitleField ?? '',
+        keyColor: renderRef.current.keyColor,
+        titleColor: renderRef.current.titleColor,
+        mutedColor: renderRef.current.mutedColor,
+      };
+      const popup = new maplibregl.Popup({ maxWidth: '360px', closeOnClick: false, className: renderRef.current.popupClass })
         .setLngLat(e.lngLat)
         .setHTML(buildPropsTable(f.properties ?? {}, cfg))
         .addTo(map);

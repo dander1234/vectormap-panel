@@ -41,6 +41,13 @@ export interface VectorTileLayerConfig {
 
   // Optional MapLibre filter as JSON text, e.g. ["==", "status", "active"].
   filterExpression: string;
+
+  // Feature-click tooltip content controls (per layer, since each layer's
+  // attributes differ).
+  tooltipHideEmpty: boolean; // drop null/blank-valued attributes
+  tooltipInclude: string; // case-insensitive regex on field name; '' = all
+  tooltipExclude: string; // case-insensitive regex on field name to hide
+  tooltipTitleField: string; // field shown as a bold header (optional)
 }
 
 export interface VectormapOptions {
@@ -52,12 +59,6 @@ export interface VectormapOptions {
   // Basemap drawn beneath the vector tile layers.
   basemap: BasemapKind;
   basemapUrl: string; // XYZ raster template, used only when basemap === 'custom'
-
-  // Feature-click tooltip (popup) content controls.
-  tooltipHideEmpty: boolean; // drop null/blank-valued attributes
-  tooltipInclude: string; // case-insensitive regex; if set, show only matching field names
-  tooltipExclude: string; // case-insensitive regex; hide matching field names
-  tooltipTitleField: string; // field name to show as a bold header (optional)
 
   // The vector tile layers to render, top-most last.
   layers: VectorTileLayerConfig[];
@@ -84,5 +85,9 @@ export function createDefaultLayer(): VectorTileLayerConfig {
     circleColor: '#1f77b4',
     circleRadius: 5,
     filterExpression: '',
+    tooltipHideEmpty: true,
+    tooltipInclude: '',
+    tooltipExclude: '',
+    tooltipTitleField: '',
   };
 }

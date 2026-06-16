@@ -154,6 +154,33 @@ export const LayersEditor: React.FC<Props> = ({ value, onChange }) => {
               onChange={(e) => update(i, { filterExpression: e.currentTarget.value })}
             />
           </Field>
+
+          {/* Per-layer tooltip content controls */}
+          <Field label="Tooltip: hide empty values">
+            <Switch
+              value={layer.tooltipHideEmpty}
+              onChange={(e) => update(i, { tooltipHideEmpty: e.currentTarget.checked })}
+            />
+          </Field>
+          <Field label="Tooltip: title field" description="Field shown as a bold header (optional)">
+            <Input
+              value={layer.tooltipTitleField}
+              onChange={(e) => update(i, { tooltipTitleField: e.currentTarget.value })}
+            />
+          </Field>
+          <Field label="Tooltip: include fields (regex)" description="Show only matching field names. Blank = all.">
+            <Input
+              value={layer.tooltipInclude}
+              onChange={(e) => update(i, { tooltipInclude: e.currentTarget.value })}
+            />
+          </Field>
+          <Field label="Tooltip: exclude fields (regex)" description="Hide matching field names, e.g. user|created|geom">
+            <Input
+              value={layer.tooltipExclude}
+              onChange={(e) => update(i, { tooltipExclude: e.currentTarget.value })}
+            />
+          </Field>
+
           <Field label="Visible by default">
             <Switch value={layer.visible} onChange={(e) => update(i, { visible: e.currentTarget.checked })} />
           </Field>

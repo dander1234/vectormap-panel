@@ -11,7 +11,6 @@ import { LayersEditor } from './components/LayersEditor';
 
 const VIEW = ['Map view'];
 const BASEMAP = ['Basemap'];
-const TOOLTIP = ['Tooltip'];
 
 export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanelOptions((builder) => {
   return (
@@ -67,36 +66,8 @@ export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanel
         category: BASEMAP,
         showIf: (opts) => opts.basemap === 'custom',
       })
-      // --- Tooltip (feature-click popup) ---
-      .addBooleanSwitch({
-        path: 'tooltipHideEmpty',
-        name: 'Hide empty values',
-        description: 'Omit attributes whose value is null or blank.',
-        defaultValue: true,
-        category: TOOLTIP,
-      })
-      .addTextInput({
-        path: 'tooltipInclude',
-        name: 'Include fields (regex)',
-        description: 'Case-insensitive regex on field NAME. If set, show only matching fields. Blank = show all.',
-        defaultValue: '',
-        category: TOOLTIP,
-      })
-      .addTextInput({
-        path: 'tooltipExclude',
-        name: 'Exclude fields (regex)',
-        description: 'Case-insensitive regex on field NAME. Hide matching fields. e.g. ^(geom|shape).*',
-        defaultValue: '',
-        category: TOOLTIP,
-      })
-      .addTextInput({
-        path: 'tooltipTitleField',
-        name: 'Title field',
-        description: 'Field whose value is shown as a bold header at the top of the popup (optional).',
-        defaultValue: '',
-        category: TOOLTIP,
-      })
       // --- Vector tile layers ---
+      // (Per-layer tooltip controls live inside the LayersEditor.)
       // Custom editor (Grafana's standard builder can't edit an array of objects).
       // A `category` is REQUIRED for a custom editor to mount in Grafana (this is
       // how Grafana's own Geomap registers its layers editor) — without it the
