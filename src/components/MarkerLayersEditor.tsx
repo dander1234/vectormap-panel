@@ -13,15 +13,24 @@ import React, { useState } from 'react';
 import { StandardEditorProps, SelectableValue, GrafanaTheme2, DataFrame } from '@grafana/data';
 import { Button, ColorPicker, Field, Icon, Input, Select, Switch, useStyles2 } from '@grafana/ui';
 import { css } from '@emotion/css';
-import { MarkerLayerConfig, MarkerShape, createDefaultMarkerLayer } from '../types';
+import { MarkerLayerConfig, MarkerShape, MarkerColorMode, createDefaultMarkerLayer } from '../types';
 import { MARKER_SHAPES } from '../shapeIcons';
 import { TooltipLinksEditor } from './TooltipLinksEditor';
+import { ColorRulesEditor } from './ColorRulesEditor';
 
 // Shape dropdown options (label-cased from the shape ids).
 const SHAPE_OPTIONS: Array<SelectableValue<MarkerShape>> = MARKER_SHAPES.map((s) => ({
   label: s.charAt(0).toUpperCase() + s.slice(1),
   value: s,
 }));
+
+// Color-mode dropdown options.
+const COLOR_MODE_OPTIONS: Array<SelectableValue<MarkerColorMode>> = [
+  { label: 'Fixed color', value: 'fixed' },
+  { label: 'By field (standard config)', value: 'field' },
+  { label: 'By field — thresholds', value: 'thresholds' },
+  { label: 'By field — regex', value: 'regex' },
+];
 
 // Read a number out of a numeric <input>, falling back if blank/NaN.
 const numFrom = (e: React.FormEvent<HTMLInputElement>, fallback: number): number => {
@@ -199,18 +208,40 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
               />
             </Field>
 
-            <Field
-              label="Color by field"
-              description="Marker color from this field's standard config (value mappings / thresholds). Blank = fixed."
-            >
-              <FieldSelect
-                value={layer.colorField}
-                names={names}
-                placeholder="Fixed color"
-                onChange={(n) => update(i, { colorField: n })}
+            <Field label="Color mode" description="How each point's color is decided.">
+              <Select
+                options={COLOR_MODE_OPTIONS}
+                value={layer.colorMode ?? 'field'}
+                onChange={(v) => update(i, { colorMode: v.value ?? 'field' })}
               />
             </Field>
-            <Field label="Fixed color" description="Used when no color field is chosen">
+            {(layer.colorMode ?? 'field') !== 'fixed' && (
+              <Field
+                label="Color by field"
+                description={
+                  (layer.colorMode ?? 'field') === 'field'
+                    ? "Color from this field's standard config (value mappings / thresholds / scheme)."
+                    : 'Field whose value the rules below are evaluated against.'
+                }
+              >
+                <FieldSelect
+                  value={layer.colorField}
+                  names={names}
+                  placeholder="Pick a field"
+                  onChange={(n) => update(i, { colorField: n })}
+                />
+              </Field>
+            )}
+            {((layer.colorMode ?? 'field') === 'thresholds' || (layer.colorMode ?? 'field') === 'regex') && (
+              <Field label={(layer.colorMode ?? 'field') === 'thresholds' ? 'Threshold rules' : 'Regex rules'}>
+                <ColorRulesEditor
+                  value={layer.colorRules ?? []}
+                  mode={(layer.colorMode ?? 'field') === 'thresholds' ? 'thresholds' : 'regex'}
+                  onChange={(rules) => update(i, { colorRules: rules })}
+                />
+              </Field>
+            )}
+            <Field label="Fixed / fallback color" description="Used for 'Fixed' mode, and when no field value or rule matches.">
               <ColorPicker color={layer.fixedColor} onChange={(c) => update(i, { fixedColor: c })} />
             </Field>
 

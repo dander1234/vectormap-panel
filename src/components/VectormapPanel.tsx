@@ -9,7 +9,14 @@ import { PanelProps, GrafanaTheme2, DataFrame } from '@grafana/data';
 import { Button, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import maplibregl from 'maplibre-gl';
-import { VectormapOptions, BasemapKind, VectorTileLayerConfig, MarkerLayerConfig, TooltipLink } from '../types';
+import {
+  VectormapOptions,
+  BasemapKind,
+  VectorTileLayerConfig,
+  MarkerLayerConfig,
+  MarkerColorMode,
+  TooltipLink,
+} from '../types';
 import { LayerControl, ControlLayer } from './LayerControl';
 import { ensureShapeIcon, iconIdForShape, SHAPE_ICON_EFFECTIVE } from '../shapeIcons';
 
@@ -229,8 +236,8 @@ const pickField = (frame: DataFrame, explicit: string, fallbacks: string[]) =>
 // Build a GeoJSON FeatureCollection of markers for ONE marker layer from the
 // panel's data frames (works with any datasource — SQL, InfluxDB, …). The layer
 // may be bound to a single query via `refId` (else every frame is read). Color
-// comes from the chosen field's STANDARD config (field.display → value mappings /
-// thresholds / color scheme); size from a numeric field scaled into
+// follows the layer's color mode (fixed | field standard-config | explicit
+// thresholds | explicit regex); size from a numeric field scaled into
 // [size, sizeMax]. Each feature keeps all the row's values as properties (for the
 // tooltip). Returns `any` to avoid the GeoJSON type imports — it's a valid
 // FeatureCollection at runtime.
@@ -239,6 +246,35 @@ const buildMarkerFeatures = (series: DataFrame[], cfg: MarkerLayerConfig, resolv
   const fixedColor = resolveColor(cfg.fixedColor || '#1f77b4');
   // Restrict to the bound query if one is set; otherwise read every frame.
   const frames = cfg.refId ? series.filter((f) => f.refId === cfg.refId) : series;
+
+  // Resolve the color mode (older configs without colorMode behave like before:
+  // 'field' if a color field is set, else 'fixed').
+  const colorMode: MarkerColorMode = cfg.colorMode ?? (cfg.colorField ? 'field' : 'fixed');
+  // Precompute the rule sets once (colors resolved here, not per row).
+  // Thresholds: numeric, sorted ascending so the LAST one ≤ value wins.
+  const thresholdRules =
+    colorMode === 'thresholds'
+      ? (cfg.colorRules ?? [])
+          .map((r) => ({ t: Number(r.match), color: resolveColor(r.color) }))
+          .filter((r) => Number.isFinite(r.t))
+          .sort((a, b) => a.t - b.t)
+      : [];
+  // Regex: compiled case-insensitively; the FIRST match wins. Blank/invalid skipped.
+  const regexRules =
+    colorMode === 'regex'
+      ? (cfg.colorRules ?? [])
+          .map((r) => {
+            if (!r.match.trim()) {
+              return null;
+            }
+            try {
+              return { re: new RegExp(r.match, 'i'), color: resolveColor(r.color) };
+            } catch {
+              return null;
+            }
+          })
+          .filter((r): r is { re: RegExp; color: string } => r !== null)
+      : [];
 
   for (const frame of frames) {
     const latField = pickField(frame, cfg.latField, LAT_NAMES);
@@ -268,12 +304,34 @@ const buildMarkerFeatures = (series: DataFrame[], cfg: MarkerLayerConfig, resolv
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
         continue;
       }
-      // Color: from the field's display (standard config), else the fixed color.
+      // Color per the layer's mode; fixed/fallback color if nothing applies.
       let color = fixedColor;
-      if (colorField?.display) {
-        const c = colorField.display(colorField.values[i]).color;
-        if (c) {
-          color = c;
+      if (colorMode !== 'fixed' && colorField) {
+        const raw = colorField.values[i];
+        if (colorMode === 'field') {
+          // Grafana standard config (value mappings / thresholds / scheme).
+          const c = colorField.display ? colorField.display(raw).color : undefined;
+          if (c) {
+            color = c;
+          }
+        } else if (colorMode === 'thresholds') {
+          const n = Number(raw);
+          if (Number.isFinite(n)) {
+            for (const r of thresholdRules) {
+              if (n >= r.t) {
+                color = r.color; // ascending, so the last match is the highest ≤ n
+              }
+            }
+          }
+        } else {
+          // regex: first matching pattern wins.
+          const s = String(raw ?? '');
+          for (const r of regexRules) {
+            if (r.re.test(s)) {
+              color = r.color;
+              break;
+            }
+          }
         }
       }
       // Size: scale the size field into [size, sizeMax], else fixed.

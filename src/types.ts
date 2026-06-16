@@ -11,6 +11,24 @@ export type GeometryType = 'line' | 'fill' | 'circle';
 // rest render as SDF symbol icons (see shapeIcons.ts). Used by marker layers.
 export type MarkerShape = 'circle' | 'square' | 'triangle' | 'diamond' | 'star' | 'cross' | 'hexagon';
 
+// How a marker layer decides each point's color:
+//  - 'fixed'      : always the layer's fixed color.
+//  - 'field'      : the chosen field's Grafana standard config (value mappings /
+//                   thresholds / color scheme) via field.display — the original
+//                   behavior; configure it in the panel's Field/Overrides tab.
+//  - 'thresholds' : explicit numeric thresholds defined ON THIS LAYER (below) —
+//                   the highest threshold ≤ the value wins.
+//  - 'regex'      : explicit regex rules defined on this layer — first pattern
+//                   that matches the (string) value wins.
+export type MarkerColorMode = 'fixed' | 'field' | 'thresholds' | 'regex';
+
+// One color rule for the 'thresholds' / 'regex' color modes. `match` is a numeric
+// threshold (as text) for thresholds, or a regex pattern for regex mode.
+export interface MarkerColorRule {
+  match: string;
+  color: string;
+}
+
 // A clickable link shown in a feature's tooltip. The `url` is a TEMPLATE: it may
 // contain ${fieldName} placeholders (substituted from the clicked feature's own
 // attributes, URL-encoded) and Grafana template variables like ${__from} or your
@@ -87,8 +105,10 @@ export interface MarkerLayerConfig {
   shape: MarkerShape; // marker shape (circle | square | triangle | …)
   latField: string; // field name; '' = auto-detect by common names (lat/latitude/y)
   lngField: string; // field name; '' = auto-detect (lng/long/longitude/lon/x)
-  colorField: string; // field whose standard config drives color; '' = fixed color
-  fixedColor: string; // used when no color field is chosen
+  colorMode: MarkerColorMode; // how color is decided (fixed | field | thresholds | regex)
+  colorField: string; // field read for color (field/thresholds/regex modes)
+  colorRules: MarkerColorRule[]; // thresholds/regex rules (used by those modes)
+  fixedColor: string; // 'fixed' mode color, and the fallback for every mode
   sizeField: string; // numeric field to scale radius; '' = fixed size
   size: number; // base radius (px); also the min when scaling by a field
   sizeMax: number; // max radius (px) when scaling by sizeField
@@ -160,7 +180,9 @@ export function createDefaultMarkerLayer(): MarkerLayerConfig {
     shape: 'circle',
     latField: '',
     lngField: '',
+    colorMode: 'field',
     colorField: '',
+    colorRules: [],
     fixedColor: '#1f77b4',
     sizeField: '',
     size: 6,
