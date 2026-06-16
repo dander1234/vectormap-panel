@@ -13,8 +13,12 @@
       "small": "img/logo.svg",
       "large": "img/logo.svg"
     },
-    "links": [],
-    "screenshots": [],
+    "links": [
+      { "name": "Website", "url": "https://github.com/dander1234/vectormap-panel" },
+      { "name": "Documentation", "url": "https://github.com/dander1234/vectormap-panel/blob/main/README.md" },
+      { "name": "License", "url": "https://github.com/dander1234/vectormap-panel/blob/main/LICENSE" }
+    ],
+    "screenshots": [{ "name": "Map with vector tiles and marker layers", "path": "img/screenshot-map.png" }],
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
