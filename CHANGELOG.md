@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+- Fix: legend icons in the on-map layer control now match the shape drawn on the
+  map (e.g. a triangle marker layer shows a triangle, not a square); vector tile
+  layers show a line/square/dot for line/fill/circle geometry.
+- Docs: added product and configuration screenshots.
+
 ## 1.1.0
 
 - Marker color modes: in addition to fixed and by-field (Grafana standard

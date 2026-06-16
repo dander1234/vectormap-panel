@@ -33,6 +33,23 @@ loads the tiles in view at the current zoom.
 - **"Set initial view"** button to capture the current center/zoom into options.
 - **Grafana template-variable interpolation** in tile/basemap URLs and filters.
 
+## Screenshots
+
+Vector tile plant routes (lines) with data-driven point markers, a grouped layer
+control, and feature tooltips:
+
+![Plant map](src/img/screenshot-map.png)
+
+| Marker tooltip | Vector tile highlight |
+| --- | --- |
+| ![Marker tooltip](src/img/screenshot-marker-tooltip.png) | ![Fiber highlight](src/img/screenshot-fiber-highlight.png) |
+
+Configuration — panel options, a marker layer, and a vector tile layer:
+
+| Panel options | Marker layer | Vector tile layer |
+| --- | --- | --- |
+| ![Options](src/img/screenshot-options.png) | ![Marker layer](src/img/screenshot-marker-layer.png) | ![Tile layer](src/img/screenshot-tile-layer.png) |
+
 ## Install (prebuilt)
 
 To run the plugin in another Grafana without building it:

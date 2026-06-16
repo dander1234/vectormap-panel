@@ -18,7 +18,11 @@
       { "name": "Documentation", "url": "https://github.com/dander1234/vectormap-panel/blob/main/README.md" },
       { "name": "License", "url": "https://github.com/dander1234/vectormap-panel/blob/main/LICENSE" }
     ],
-    "screenshots": [{ "name": "Map with vector tiles and marker layers", "path": "img/screenshot-map.png" }],
+    "screenshots": [
+      { "name": "Vector tile plant routes with data-driven markers", "path": "img/screenshot-map.png" },
+      { "name": "Feature tooltip on a marker", "path": "img/screenshot-marker-tooltip.png" },
+      { "name": "Vector tile feature highlight and tooltip", "path": "img/screenshot-fiber-highlight.png" }
+    ],
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
