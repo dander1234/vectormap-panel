@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Marker color modes: in addition to fixed and by-field (Grafana standard
+  config), marker layers can now color points by explicit **thresholds** or
+  **regex** rules defined directly on the layer.
+
 ## 1.0.0
 
 Initial release.

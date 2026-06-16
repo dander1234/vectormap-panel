@@ -19,8 +19,10 @@ loads the tiles in view at the current zoom.
 - **Vector tile layers** (MVT/PBF) — tile URL, source layer, geometry/paint,
   optional MapLibre filter, and TMS/XYZ scheme (GeoServer GWC is TMS).
 - **Marker layers from query data** (any datasource — SQL, InfluxDB, …), bound
-  per query (`refId`), colored and sized by Grafana standard field configs, with
-  selectable **shapes**: circle, square, triangle, diamond, star, cross, hexagon.
+  per query (`refId`), sized by a field, with selectable **shapes**: circle,
+  square, triangle, diamond, star, cross, hexagon.
+- **Marker color modes** — fixed, by field (Grafana standard config), or explicit
+  **thresholds** / **regex** rules defined right on the layer.
 - **Unified on-map layer control** — show/hide and group both tile and marker
   layers from one box.
 - **Per-layer tooltips** — include/exclude fields by regex, hide empty values, a
