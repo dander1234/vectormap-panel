@@ -77,14 +77,45 @@ Then restart Grafana. Changes to frontend code only require a `npm run dev`
 rebuild and a browser refresh; changes to `plugin.json` require a Grafana
 restart.
 
-## Publishing
+## Publishing to the Grafana catalog (community plugin)
 
-To publish to the Grafana catalog the plugin must be signed. The first segment
-of the plugin ID (`dander1234`) must match your Grafana Cloud account slug. See
-the Grafana [plugin publishing and signing](https://grafana.com/legal/plugins/#plugin-publishing-and-signing-criteria)
-docs. The scaffolded GitHub Actions release workflow can sign and package on a
-version tag (`npm version <major|minor|patch>` then push with `--follow-tags`),
-given a `GRAFANA_API_KEY` repository secret.
+Once published and signed by Grafana, the plugin loads on any Grafana with no
+unsigned-plugin override.
+
+**Prerequisite:** a [grafana.com](https://grafana.com) account whose org slug
+equals the plugin ID prefix — **`dander1234`**. If your slug differs, the plugin
+ID (and folder name) must be renamed to match.
+
+1. **Validate locally** with Grafana's official checker (the same one the
+   submission runs):
+   ```bash
+   npm run build
+   # zip dist/ as <id>/… then:
+   npx @grafana/plugin-validator@latest -sourceCodeUri file://$(pwd) <packaged>.zip
+   ```
+   Fix any errors/warnings (license text, screenshots, etc.).
+2. **Add at least one real screenshot** to `src/img/` and reference it in
+   `plugin.json` `info.screenshots` (placeholder images are rejected at review).
+3. **Cut a release** (`git tag vX.Y.Z`) and attach the packaged zip.
+4. **Submit** at grafana.com → *My Account → Plugins → Submit Plugin*, providing
+   the public repo URL + commit and the release zip download URL. Grafana runs
+   automated validation, then a human review; on approval it is signed as a
+   **community** plugin and listed publicly.
+
+See Grafana's [publishing and signing criteria](https://grafana.com/legal/plugins/#plugin-publishing-and-signing-criteria).
+
+### Private signing (alternative)
+
+To avoid the unsigned-plugin override on your *own* instances without public
+listing, sign privately for specific URLs:
+
+```bash
+export GRAFANA_ACCESS_POLICY_TOKEN=<token from grafana.com Access Policies, scope plugins:write>
+npm run build
+npm run sign -- --rootUrls https://your-grafana.example.com
+```
+
+This writes `dist/MANIFEST.txt`; re-zip and deploy.
 
 ## License
 
