@@ -1,41 +1,84 @@
 // VectormapPanel — the React component that renders the MapLibre GL JS map.
 //
-// Bridges two worlds: React owns the DOM declaratively, while MapLibre is
-// imperative (create a Map, then call methods on it). We bridge with `useRef`
-// (a stable box surviving re-renders) and `useEffect` (run side effects at
+// Bridges React (declarative DOM) and MapLibre (imperative map object) using
+// `useRef` (a stable box surviving re-renders) and `useEffect` (side effects at
 // controlled lifecycle points). Each effect below is numbered and commented.
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { PanelProps } from '@grafana/data';
 import { Button, useTheme2 } from '@grafana/ui';
 import maplibregl from 'maplibre-gl';
-import { VectormapOptions } from '../types';
+import { VectormapOptions, BasemapKind } from '../types';
+import { LayerControl } from './LayerControl';
 
 // MapLibre's stylesheet (positions canvas + controls). webpack's style-loader
 // injects it at runtime.
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-// Each configured layer becomes a MapLibre source + draw layer. We derive their
-// ids from the layer's stable id, and use the prefixes to find "our" layers
-// (versus the basemap) when rebuilding or handling clicks.
+// Each configured layer becomes a MapLibre source + draw layer, derived from the
+// layer's stable id. Prefixes let us find "our" overlays vs the basemap.
 const VT_SOURCE_PREFIX = 'vt-src-';
 const VT_LAYER_PREFIX = 'vt-layer-';
 const sourceIdFor = (layerId: string) => VT_SOURCE_PREFIX + layerId;
 const layerIdFor = (layerId: string) => VT_LAYER_PREFIX + layerId;
 
+// The basemap is managed as one swappable raster source + layer kept beneath the
+// overlays (so changing it never disturbs the overlay layers).
+const BASEMAP_SOURCE_ID = 'basemap';
+const BASEMAP_LAYER_ID = 'basemap';
+
 // Color used to draw a clicked/selected feature.
 const HIGHLIGHT_COLOR = '#00e5ff';
 
-// Build a paint expression: use `highlightValue` when the feature is selected
-// (feature-state 'highlighted' is true), else `normalValue`. Returns `any` to
-// sidestep MapLibre's strict expression typing — the value is a valid MapLibre
-// expression at runtime.
+// Paint expression: highlight value when the feature is selected, else normal.
+// Returns `any` to sidestep MapLibre's strict expression typing.
 const whenHighlighted = (highlightValue: unknown, normalValue: unknown): any => [
   'case',
   ['boolean', ['feature-state', 'highlighted'], false],
   highlightValue,
   normalValue,
 ];
+
+// Raster source spec for a given basemap choice (null = no basemap). `any` keeps
+// us out of MapLibre's source-spec typing; these are valid raster sources.
+const basemapSourceSpec = (kind: BasemapKind, customUrl: string): any | null => {
+  switch (kind) {
+    case 'none':
+      return null;
+    case 'carto-light':
+      return {
+        type: 'raster',
+        tileSize: 256,
+        attribution: '© OpenStreetMap contributors, © CARTO',
+        tiles: ['a', 'b', 'c'].map((s) => `https://${s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png`),
+      };
+    case 'carto-dark':
+      return {
+        type: 'raster',
+        tileSize: 256,
+        attribution: '© OpenStreetMap contributors, © CARTO',
+        tiles: ['a', 'b', 'c'].map((s) => `https://${s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png`),
+      };
+    case 'satellite':
+      // Esri World Imagery uses {z}/{y}/{x} order (note y before x).
+      return {
+        type: 'raster',
+        tileSize: 256,
+        attribution: 'Esri, Maxar, Earthstar Geographics',
+        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      };
+    case 'custom':
+      return customUrl ? { type: 'raster', tileSize: 256, tiles: [customUrl] } : null;
+    case 'osm':
+    default:
+      return {
+        type: 'raster',
+        tileSize: 256,
+        attribution: '© OpenStreetMap contributors',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      };
+  }
+};
 
 // Escape untrusted attribute text before inserting into popup HTML.
 const escapeHtml = (value: unknown): string =>
@@ -63,39 +106,33 @@ interface Props extends PanelProps<VectormapOptions> {}
 export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, width, height }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  // Theme: resolves color-picker values (which may be named palette colors like
-  // 'dark-red', not CSS) into real CSS colors MapLibre can parse.
   const theme = useTheme2();
   // Interactivity refs: the open attribute popup, and the highlighted feature.
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const highlightRef = useRef<{ source: string; sourceLayer: string; id: string | number } | null>(null);
 
-  // EFFECT 1 — create the map exactly once, on mount. The empty deps array means
-  // "run once". We never recreate the map on option change (that would flicker);
-  // other effects mutate the existing map instead.
+  // Runtime layer visibility (driven by the on-map LayerControl). Keyed by
+  // layer.id. We also mirror it in a ref so the layer-build effect can read the
+  // latest value even when it runs deferred (on the style 'load' event).
+  const [visibility, setVisibility] = useState<Record<string, boolean>>({});
+  const visibilityRef = useRef(visibility);
+  visibilityRef.current = visibility;
+
+  // EFFECT 1 — create the map exactly once, on mount, with an EMPTY style plus a
+  // background layer. The actual basemap is added by EFFECT B so it can be
+  // swapped without disturbing overlays.
   useEffect(() => {
     if (!containerRef.current) {
       return;
     }
     const map = new maplibregl.Map({
       container: containerRef.current,
-      // Minimal OSM raster basemap. (Selectable basemaps are a planned feature.)
-      // tile.openstreetmap.org is fine for light dev use only — see its usage
-      // policy before production.
       style: {
         version: 8,
-        sources: {
-          osm: {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '© OpenStreetMap contributors',
-          },
-        },
-        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+        sources: {},
+        layers: [{ id: 'bg', type: 'background', paint: { 'background-color': theme.colors.background.secondary } }],
       },
-      // MapLibre center is [longitude, latitude] — reverse of spoken order.
-      center: [options.initialLng, options.initialLat],
+      center: [options.initialLng, options.initialLat], // MapLibre order is [lng, lat]
       zoom: options.initialZoom,
     });
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -108,7 +145,39 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // EFFECT 2 — keep the canvas sized to the panel (MapLibre doesn't auto-watch).
+  // EFFECT B — add/swap the basemap raster layer beneath the overlays.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    const applyBasemap = () => {
+      if (map.getLayer(BASEMAP_LAYER_ID)) {
+        map.removeLayer(BASEMAP_LAYER_ID);
+      }
+      if (map.getSource(BASEMAP_SOURCE_ID)) {
+        map.removeSource(BASEMAP_SOURCE_ID);
+      }
+      const spec = basemapSourceSpec(options.basemap, options.basemapUrl);
+      if (!spec) {
+        return; // 'none' (or custom with empty URL) — leave just the background
+      }
+      map.addSource(BASEMAP_SOURCE_ID, spec);
+      // Insert below the first overlay so overlays always stay on top.
+      const firstVt = (map.getStyle().layers ?? []).find((l) => l.id.startsWith(VT_LAYER_PREFIX))?.id;
+      map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_SOURCE_ID }, firstVt);
+    };
+    if (map.isStyleLoaded()) {
+      applyBasemap();
+    } else {
+      map.once('load', applyBasemap);
+    }
+    return () => {
+      map.off('load', applyBasemap);
+    };
+  }, [options.basemap, options.basemapUrl]);
+
+  // EFFECT 2 — keep the canvas sized to the panel.
   useEffect(() => {
     mapRef.current?.resize();
   }, [width, height]);
@@ -121,12 +190,9 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
     });
   }, [options.initialLat, options.initialLng, options.initialZoom]);
 
-  // EFFECT 4 — (re)build every configured vector tile layer.
-  //
-  // Strategy: on any layer-config change, remove all of OUR sources/layers (by
-  // prefix) and add the current set fresh. Simple and correct; the trade-off is
-  // that editing one layer re-adds them all (tiles re-fetch, largely from cache).
-  // Must wait for the basemap style to load before adding sources.
+  // EFFECT 4 — (re)build every configured vector tile layer (remove ours, add the
+  // current set). Each layer gets its initial visibility from the live runtime
+  // visibility state (via the ref) so toggles survive a rebuild.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) {
@@ -134,7 +200,6 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
     }
 
     const applyLayers = () => {
-      // Tear down our previous layers (remove layers before their sources).
       const style = map.getStyle();
       (style.layers ?? []).forEach((l) => {
         if (l.id.startsWith(VT_LAYER_PREFIX)) {
@@ -146,33 +211,27 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
           map.removeSource(s);
         }
       });
-      // Any open popup/highlight referred to the old layers — clear it.
       popupRef.current?.remove();
       popupRef.current = null;
       highlightRef.current = null;
 
       for (const layer of options.layers ?? []) {
-        // Skip layers that aren't configured enough to draw.
         if (!layer.tileUrl || !layer.sourceLayer) {
           continue;
         }
         const sId = sourceIdFor(layer.id);
         const lId = layerIdFor(layer.id);
-        // Resolve picker colors to real CSS, with fallbacks for unset values.
         const lineColor = theme.visualization.getColorByName(layer.lineColor ?? '#ff5722');
         const fillColor = theme.visualization.getColorByName(layer.fillColor ?? '#3388ff');
         const circleColor = theme.visualization.getColorByName(layer.circleColor ?? '#1f77b4');
         const lineWidth = layer.lineWidth ?? 2;
         const fillOpacity = layer.fillOpacity ?? 0.4;
         const circleRadius = layer.circleRadius ?? 5;
-        const visibility: 'visible' | 'none' = layer.visible === false ? 'none' : 'visible';
+        const desiredVisible = visibilityRef.current[layer.id] ?? layer.visible !== false;
+        const vis: 'visible' | 'none' = desiredVisible ? 'visible' : 'none';
 
         try {
-          map.addSource(sId, {
-            type: 'vector',
-            tiles: [layer.tileUrl], // {z}/{x}/{y} template; variable interpolation = Phase 6
-            scheme: layer.tileScheme, // 'tms' flips Y for GeoServer GWC TMS
-          });
+          map.addSource(sId, { type: 'vector', tiles: [layer.tileUrl], scheme: layer.tileScheme });
 
           if (layer.geometryType === 'fill') {
             map.addLayer({
@@ -180,7 +239,7 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
               type: 'fill',
               source: sId,
               'source-layer': layer.sourceLayer,
-              layout: { visibility },
+              layout: { visibility: vis },
               paint: {
                 'fill-color': whenHighlighted(HIGHLIGHT_COLOR, fillColor),
                 'fill-opacity': whenHighlighted(Math.min(fillOpacity + 0.3, 1), fillOpacity),
@@ -192,7 +251,7 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
               type: 'circle',
               source: sId,
               'source-layer': layer.sourceLayer,
-              layout: { visibility },
+              layout: { visibility: vis },
               paint: {
                 'circle-color': whenHighlighted(HIGHLIGHT_COLOR, circleColor),
                 'circle-radius': whenHighlighted(circleRadius + 3, circleRadius),
@@ -206,7 +265,7 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
               type: 'line',
               source: sId,
               'source-layer': layer.sourceLayer,
-              layout: { visibility, 'line-cap': 'round', 'line-join': 'round' },
+              layout: { visibility: vis, 'line-cap': 'round', 'line-join': 'round' },
               paint: {
                 'line-color': whenHighlighted(HIGHLIGHT_COLOR, lineColor),
                 'line-width': whenHighlighted(lineWidth + 3, lineWidth),
@@ -214,7 +273,6 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
             });
           }
 
-          // Optional per-layer filter (JSON). Invalid → warn, keep the layer.
           if (layer.filterExpression?.trim()) {
             try {
               map.setFilter(lId, JSON.parse(layer.filterExpression));
@@ -241,17 +299,11 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
   }, [options.layers, theme]);
 
   // EFFECT 5 — feature interactivity across ALL vector tile layers.
-  //
-  // Bound once. At event time it reads the current set of "our" layer ids from
-  // the live style, so it works no matter how many layers exist or how they
-  // change. The clicked feature carries its own source/sourceLayer/id, so the
-  // highlight logic needs no option values.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) {
       return;
     }
-
     const ourLayerIds = (): string[] =>
       (map.getStyle().layers ?? []).map((l) => l.id).filter((id) => id.startsWith(VT_LAYER_PREFIX));
 
@@ -272,7 +324,7 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
       }
       const f = map.queryRenderedFeatures(e.point, { layers: ids })[0];
       if (!f || f.id === undefined) {
-        return; // clicked empty space — selection already cleared
+        return;
       }
       const target = { source: f.source, sourceLayer: f.sourceLayer as string, id: f.id };
       map.setFeatureState(target, { highlighted: true });
@@ -286,7 +338,6 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
       popupRef.current = popup;
     };
 
-    // Pointer cursor when hovering any of our features.
     const onMove = (e: maplibregl.MapMouseEvent) => {
       const ids = ourLayerIds();
       const hit = ids.length > 0 && map.queryRenderedFeatures(e.point, { layers: ids }).length > 0;
@@ -304,8 +355,31 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // "Set initial view" button: capture the map's current center/zoom and persist
-  // them as the panel's initial-view options via onOptionsChange.
+  // EFFECT 6 — keep the runtime visibility state in step with the configured
+  // layer set: new layers default to their `visible`, removed layers drop out,
+  // existing toggles are preserved.
+  useEffect(() => {
+    setVisibility((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const l of options.layers ?? []) {
+        next[l.id] = l.id in prev ? prev[l.id] : l.visible !== false;
+      }
+      return next;
+    });
+  }, [options.layers]);
+
+  // Toggle a layer's visibility from the LayerControl: update state + flip the
+  // MapLibre layout property immediately.
+  const handleToggle = (layerId: string, visible: boolean) => {
+    setVisibility((prev) => ({ ...prev, [layerId]: visible }));
+    const map = mapRef.current;
+    const lId = layerIdFor(layerId);
+    if (map?.getLayer(lId)) {
+      map.setLayoutProperty(lId, 'visibility', visible ? 'visible' : 'none');
+    }
+  };
+
+  // "Set initial view": capture the map's current center/zoom into the options.
   const handleSetInitialView = () => {
     const map = mapRef.current;
     if (!map) {
@@ -334,6 +408,7 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
           Set initial view
         </Button>
       </div>
+      <LayerControl layers={options.layers ?? []} visibility={visibility} onToggle={handleToggle} />
     </div>
   );
 };

@@ -3,6 +3,21 @@
 Running notes on features we've deliberately deferred, with the design thinking
 captured so we can pick them up cleanly later. These are NOT yet implemented.
 
+## Tooltip (feature popup) styling + content filtering
+
+**Status:** deferred. Today the click popup is a plain HTML attribute table
+(`buildPropsTable` in VectormapPanel.tsx) — readable but cramped/hard to scan.
+
+**Wanted:**
+- Better styling: wider/clearer layout, theme-aware colors, key/value alignment,
+  maybe zebra striping; respect light/dark theme.
+- Per-layer (or global) control over WHICH attributes show, and filtering out
+  unwanted values — e.g. **hide null/empty values**, and include/exclude fields
+  by name via a **regex or allow/deny list**.
+- Likely a panel option like `tooltipFields` (include regex), `tooltipExclude`
+  (exclude regex), and a `hideEmpty` boolean — applied in buildPropsTable.
+- Consider a configurable title field (e.g. show `name`/`apb_guid` as a header).
+
 ## Configurable basemap providers
 
 **Status:** deferred. Today the basemap is hardcoded to a single OpenStreetMap

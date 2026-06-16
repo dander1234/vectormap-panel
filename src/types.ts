@@ -12,6 +12,10 @@ export type GeometryType = 'line' | 'fill' | 'circle';
 // fetches the WRONG tiles unless told scheme: 'tms'.
 export type TileScheme = 'xyz' | 'tms';
 
+// Built-in basemap choices (mirrors the defaults Grafana's Geomap offers), plus
+// 'none' (overlays on a blank background) and 'custom' (your own XYZ raster URL).
+export type BasemapKind = 'osm' | 'carto-light' | 'carto-dark' | 'satellite' | 'none' | 'custom';
+
 // One configurable vector tile (MVT) layer. The panel can show several of these
 // at once; each becomes its own MapLibre source + draw layer.
 export interface VectorTileLayerConfig {
@@ -44,6 +48,10 @@ export interface VectormapOptions {
   initialLat: number;
   initialLng: number;
   initialZoom: number;
+
+  // Basemap drawn beneath the vector tile layers.
+  basemap: BasemapKind;
+  basemapUrl: string; // XYZ raster template, used only when basemap === 'custom'
 
   // The vector tile layers to render, top-most last.
   layers: VectorTileLayerConfig[];
