@@ -392,6 +392,9 @@ export const VectormapPanel: React.FC<Props> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Interpolated custom basemap URL (see EFFECT B deps note below).
+  const basemapUrlInterp = replaceVariables(options.basemapUrl ?? '');
+
   // EFFECT B — add/swap the basemap raster layer beneath the overlays.
   useEffect(() => {
     const map = mapRef.current;
@@ -405,7 +408,9 @@ export const VectormapPanel: React.FC<Props> = ({
       if (map.getSource(BASEMAP_SOURCE_ID)) {
         map.removeSource(BASEMAP_SOURCE_ID);
       }
-      const spec = basemapSourceSpec(options.basemap, options.basemapUrl);
+      // Interpolate dashboard/template variables in the custom URL (e.g. an API
+      // key or region kept in a Grafana variable).
+      const spec = basemapSourceSpec(options.basemap, basemapUrlInterp);
       if (!spec) {
         return; // 'none' (or custom with empty URL) — leave just the background
       }
@@ -425,7 +430,9 @@ export const VectormapPanel: React.FC<Props> = ({
     return () => {
       map.off('load', applyBasemap);
     };
-  }, [options.basemap, options.basemapUrl]);
+    // Depend on the INTERPOLATED url (not the raw template) so swapping a
+    // dashboard variable re-runs this effect — options identity is unchanged then.
+  }, [options.basemap, basemapUrlInterp]);
 
   // EFFECT 2 — keep the canvas sized to the panel.
   useEffect(() => {
@@ -439,6 +446,13 @@ export const VectormapPanel: React.FC<Props> = ({
       zoom: options.initialZoom,
     });
   }, [options.initialLat, options.initialLng, options.initialZoom]);
+
+  // Key built from the INTERPOLATED tile URLs + filters. EFFECT 4 depends on it so
+  // that changing a dashboard variable (which doesn't change `options` identity)
+  // still rebuilds the tile layers with the new interpolated values.
+  const layersInterpKey = (options.layers ?? [])
+    .map((l) => `${l.id}${replaceVariables(l.tileUrl ?? '')}${replaceVariables(l.filterExpression ?? '')}`)
+    .join('|');
 
   // EFFECT 4 — (re)build every configured vector tile layer (remove ours, add the
   // current set). Each layer gets its initial visibility from the live runtime
@@ -480,8 +494,12 @@ export const VectormapPanel: React.FC<Props> = ({
         const desiredVisible = visibilityRef.current[layer.id] ?? layer.visible !== false;
         const vis: 'visible' | 'none' = desiredVisible ? 'visible' : 'none';
 
+        // Interpolate dashboard/template variables in the tile URL (e.g.
+        // ${region} or a filter token) before handing it to MapLibre.
+        const tileUrl = replaceVariables(layer.tileUrl);
+
         try {
-          map.addSource(sId, { type: 'vector', tiles: [layer.tileUrl], scheme: layer.tileScheme });
+          map.addSource(sId, { type: 'vector', tiles: [tileUrl], scheme: layer.tileScheme });
 
           if (layer.geometryType === 'fill') {
             map.addLayer({
@@ -525,7 +543,9 @@ export const VectormapPanel: React.FC<Props> = ({
 
           if (layer.filterExpression?.trim()) {
             try {
-              map.setFilter(lId, JSON.parse(layer.filterExpression));
+              // Interpolate variables inside the filter JSON too (e.g. a value
+              // pulled from a dashboard variable).
+              map.setFilter(lId, JSON.parse(replaceVariables(layer.filterExpression)));
             } catch (err) {
               console.warn(`[vectormap] invalid filter for layer "${layer.name}":`, err);
             }
@@ -550,7 +570,9 @@ export const VectormapPanel: React.FC<Props> = ({
     return () => {
       map.off('load', applyLayers);
     };
-  }, [options.layers, theme]);
+    // layersInterpKey re-runs this when an interpolated URL/filter changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options.layers, theme, layersInterpKey]);
 
   // EFFECT M — reconcile the marker layers (one GeoJSON source + circle layer per
   // configured marker layer) against the panel's query results. For each layer we
