@@ -53,6 +53,12 @@ export interface VectormapOptions {
   basemap: BasemapKind;
   basemapUrl: string; // XYZ raster template, used only when basemap === 'custom'
 
+  // Feature-click tooltip (popup) content controls.
+  tooltipHideEmpty: boolean; // drop null/blank-valued attributes
+  tooltipInclude: string; // case-insensitive regex; if set, show only matching field names
+  tooltipExclude: string; // case-insensitive regex; hide matching field names
+  tooltipTitleField: string; // field name to show as a bold header (optional)
+
   // The vector tile layers to render, top-most last.
   layers: VectorTileLayerConfig[];
 }

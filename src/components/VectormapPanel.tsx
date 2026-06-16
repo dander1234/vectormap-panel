@@ -5,8 +5,9 @@
 // controlled lifecycle points). Each effect below is numbered and commented.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { PanelProps } from '@grafana/data';
-import { Button, useTheme2 } from '@grafana/ui';
+import { PanelProps, GrafanaTheme2 } from '@grafana/data';
+import { Button, useStyles2, useTheme2 } from '@grafana/ui';
+import { css } from '@emotion/css';
 import maplibregl from 'maplibre-gl';
 import { VectormapOptions, BasemapKind } from '../types';
 import { LayerControl } from './LayerControl';
@@ -88,17 +89,74 @@ const escapeHtml = (value: unknown): string =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-// Build a scrollable attribute table from a feature's MVT properties.
-const buildPropsTable = (props: Record<string, unknown>): string => {
-  const rows = Object.entries(props)
+// Resolved tooltip rendering config (from panel options + theme colors).
+interface TooltipRenderConfig {
+  hideEmpty: boolean;
+  include: string;
+  exclude: string;
+  titleField: string;
+  keyColor: string;
+  titleColor: string;
+  mutedColor: string;
+}
+
+// Compile a user regex, returning null on blank/invalid (so a bad regex never
+// breaks the popup).
+const compileRegex = (src: string): RegExp | null => {
+  if (!src || !src.trim()) {
+    return null;
+  }
+  try {
+    return new RegExp(src, 'i');
+  } catch {
+    return null;
+  }
+};
+
+const isEmptyValue = (v: unknown): boolean => v === null || v === undefined || String(v).trim() === '';
+
+// Build the popup HTML: an optional bold title + a filtered attribute table.
+const buildPropsTable = (props: Record<string, unknown>, cfg: TooltipRenderConfig): string => {
+  const includeRe = compileRegex(cfg.include);
+  const excludeRe = compileRegex(cfg.exclude);
+
+  let entries = Object.entries(props).filter(([key, value]) => {
+    if (cfg.hideEmpty && isEmptyValue(value)) {
+      return false;
+    }
+    if (includeRe && !includeRe.test(key)) {
+      return false;
+    }
+    if (excludeRe && excludeRe.test(key)) {
+      return false;
+    }
+    return true;
+  });
+
+  let titleHtml = '';
+  if (cfg.titleField) {
+    const titleValue = props[cfg.titleField];
+    if (!isEmptyValue(titleValue)) {
+      titleHtml = `<div style="font-weight:600;font-size:13px;margin-bottom:6px;color:${cfg.titleColor}">${escapeHtml(
+        titleValue
+      )}</div>`;
+      entries = entries.filter(([key]) => key !== cfg.titleField); // don't repeat it below
+    }
+  }
+
+  if (!entries.length && !titleHtml) {
+    return `<div style="color:${cfg.mutedColor};font-size:12px">No attributes to show</div>`;
+  }
+
+  const rows = entries
     .map(
-      ([k, v]) =>
-        `<tr><td style="padding:1px 6px 1px 0;color:#888;white-space:nowrap;vertical-align:top">${escapeHtml(
-          k
-        )}</td><td style="padding:1px 0">${escapeHtml(v)}</td></tr>`
+      ([key, value]) =>
+        `<tr><td style="padding:2px 12px 2px 0;color:${cfg.keyColor};white-space:nowrap;vertical-align:top">${escapeHtml(
+          key
+        )}</td><td style="padding:2px 0;vertical-align:top">${escapeHtml(value)}</td></tr>`
     )
     .join('');
-  return `<div style="max-height:240px;overflow:auto;font-size:11px;line-height:1.35"><table style="border-collapse:collapse">${rows}</table></div>`;
+  return `${titleHtml}<div style="max-height:260px;overflow:auto"><table style="border-collapse:collapse;font-size:12px;line-height:1.45">${rows}</table></div>`;
 };
 
 interface Props extends PanelProps<VectormapOptions> {}
@@ -110,6 +168,36 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
   // Interactivity refs: the open attribute popup, and the highlighted feature.
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const highlightRef = useRef<{ source: string; sourceLayer: string; id: string | number } | null>(null);
+  // Theme-aware CSS class for the popup container (see getPopupStyles).
+  const popupStyles = useStyles2(getPopupStyles);
+
+  // The click handler is bound once (EFFECT 5), so it reads the live tooltip
+  // config/style through this ref rather than a stale closure.
+  const tooltipRef = useRef<{ cfg: TooltipRenderConfig; popupClass: string }>({
+    cfg: { hideEmpty: true, include: '', exclude: '', titleField: '', keyColor: '#888', titleColor: '#222', mutedColor: '#aaa' },
+    popupClass: '',
+  });
+  useEffect(() => {
+    tooltipRef.current = {
+      cfg: {
+        hideEmpty: options.tooltipHideEmpty,
+        include: options.tooltipInclude,
+        exclude: options.tooltipExclude,
+        titleField: options.tooltipTitleField,
+        keyColor: theme.colors.text.secondary,
+        titleColor: theme.colors.text.primary,
+        mutedColor: theme.colors.text.disabled,
+      },
+      popupClass: popupStyles.popup,
+    };
+  }, [
+    options.tooltipHideEmpty,
+    options.tooltipInclude,
+    options.tooltipExclude,
+    options.tooltipTitleField,
+    theme,
+    popupStyles.popup,
+  ]);
 
   // Runtime layer visibility (driven by the on-map LayerControl). Keyed by
   // layer.id. We also mirror it in a ref so the layer-build effect can read the
@@ -337,9 +425,10 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
       map.setFeatureState(target, { highlighted: true });
       highlightRef.current = target;
 
-      const popup = new maplibregl.Popup({ maxWidth: '340px', closeOnClick: false })
+      const { cfg, popupClass } = tooltipRef.current;
+      const popup = new maplibregl.Popup({ maxWidth: '360px', closeOnClick: false, className: popupClass })
         .setLngLat(e.lngLat)
-        .setHTML(buildPropsTable(f.properties ?? {}))
+        .setHTML(buildPropsTable(f.properties ?? {}, cfg))
         .addTo(map);
       popup.on('close', clearHighlight);
       popupRef.current = popup;
@@ -412,3 +501,32 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
     </div>
   );
 };
+
+// Theme-aware styling for the MapLibre popup. MapLibre builds the popup outside
+// React, so we target its inner elements via a class applied to the popup, and
+// override the default white box to match the Grafana theme (works in dark mode).
+const getPopupStyles = (theme: GrafanaTheme2) => ({
+  popup: css({
+    '& .maplibregl-popup-content': {
+      background: theme.colors.background.primary,
+      color: theme.colors.text.primary,
+      borderRadius: '4px',
+      padding: theme.spacing(1, 1.5),
+      border: `1px solid ${theme.colors.border.weak}`,
+      boxShadow: theme.shadows.z2,
+    },
+    // The little arrow ("tip") — only one side is colored depending on anchor, so
+    // set them all to the popup background.
+    '& .maplibregl-popup-tip': {
+      borderTopColor: theme.colors.background.primary,
+      borderBottomColor: theme.colors.background.primary,
+      borderLeftColor: theme.colors.background.primary,
+      borderRightColor: theme.colors.background.primary,
+    },
+    '& .maplibregl-popup-close-button': {
+      color: theme.colors.text.secondary,
+      fontSize: '18px',
+      paddingRight: '4px',
+    },
+  }),
+});
