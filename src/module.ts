@@ -36,11 +36,15 @@ export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanel
     // --- Vector tile layers ---
     // A custom editor because Grafana's standard builder cannot edit an array of
     // objects. LayersEditor renders the add/remove/configure UI for each layer.
+    //
+    // NOTE: a `category` is REQUIRED for a custom editor to render in Grafana's
+    // options pane (this is how Grafana's own Geomap panel registers its layers
+    // editor). Without it the editor silently never mounts.
     .addCustomEditor({
+      category: ['Vector tile layers'],
       id: 'layers',
       path: 'layers',
-      name: 'Vector tile layers',
-      description: 'Add one or more MVT layers to render on the map.',
+      name: '',
       editor: LayersEditor,
       defaultValue: [createDefaultLayer()],
     });

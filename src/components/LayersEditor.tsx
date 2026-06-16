@@ -1,17 +1,13 @@
-// LayersEditor — a custom Grafana options editor for the `layers` array.
+// LayersEditor — custom Grafana options editor for the `layers` array.
 //
-// Grafana's standard options builder can add single controls (text, select,
-// color…) but has no built-in editor for "a list of objects". So we register
-// this React component via builder.addCustomEditor() in module.ts. It receives
-// the current array as `value` and reports edits back through `onChange`.
-//
-// React rule on display here: we never mutate `value` in place. Every change
-// builds a NEW array (map/filter/spread) and passes it to onChange — that's how
-// React/Grafana detect the change and re-render.
+// Grafana's standard options builder cannot edit "a list of objects", so we
+// register this component via builder.addCustomEditor() in module.ts. It gets
+// the current array as `value` and reports edits through `onChange`. We never
+// mutate `value` in place — every change builds a NEW array.
 
-import React, { useState } from 'react';
+import React from 'react';
 import { StandardEditorProps, SelectableValue, GrafanaTheme2 } from '@grafana/data';
-import { Button, ColorPicker, Collapse, Field, IconButton, Input, Select, Switch, useStyles2 } from '@grafana/ui';
+import { Button, ColorPicker, Field, Input, Select, Switch, useStyles2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import { VectorTileLayerConfig, GeometryType, TileScheme, createDefaultLayer } from '../types';
 
@@ -25,7 +21,7 @@ const GEOMETRY_OPTIONS: Array<SelectableValue<GeometryType>> = [
   { label: 'Circle', value: 'circle' },
 ];
 
-// Read a number out of an <input type="number">, falling back if it's blank/NaN.
+// Read a number out of a numeric <input>, falling back if blank/NaN.
 const numFrom = (e: React.FormEvent<HTMLInputElement>, fallback: number): number => {
   const n = e.currentTarget.valueAsNumber;
   return Number.isFinite(n) ? n : fallback;
@@ -36,18 +32,10 @@ type Props = StandardEditorProps<VectorTileLayerConfig[]>;
 export const LayersEditor: React.FC<Props> = ({ value, onChange }) => {
   const styles = useStyles2(getStyles);
   const layers = value ?? [];
-  // Which layer's panel is expanded. Local UI state only — not part of options.
-  const [openId, setOpenId] = useState<string | null>(layers[0]?.id ?? null);
 
-  // Immutable update of one layer by index.
   const update = (index: number, patch: Partial<VectorTileLayerConfig>) =>
     onChange(layers.map((l, i) => (i === index ? { ...l, ...patch } : l)));
-
-  const add = () => {
-    const layer = createDefaultLayer();
-    onChange([...layers, layer]);
-    setOpenId(layer.id);
-  };
+  const add = () => onChange([...layers, createDefaultLayer()]);
   const remove = (index: number) => onChange(layers.filter((_, i) => i !== index));
   const move = (index: number, dir: -1 | 1) => {
     const j = index + dir;
@@ -61,18 +49,27 @@ export const LayersEditor: React.FC<Props> = ({ value, onChange }) => {
 
   return (
     <div>
+      <Button icon="plus" variant="primary" size="sm" onClick={add} className={styles.addTop}>
+        Add layer
+      </Button>
+
+      {layers.length === 0 && <div className={styles.empty}>No layers yet — click “Add layer”.</div>}
+
       {layers.map((layer, i) => (
-        <Collapse
-          key={layer.id}
-          label={layer.name || `Layer ${i + 1}`}
-          collapsible
-          isOpen={openId === layer.id}
-          onToggle={() => setOpenId(openId === layer.id ? null : layer.id)}
-        >
-          <div className={styles.toolbar}>
-            <IconButton name="arrow-up" tooltip="Move up" onClick={() => move(i, -1)} />
-            <IconButton name="arrow-down" tooltip="Move down" onClick={() => move(i, 1)} />
-            <IconButton name="trash-alt" tooltip="Remove layer" onClick={() => remove(i)} />
+        <div key={layer.id} className={styles.card}>
+          <div className={styles.header}>
+            <strong>{layer.name || `Layer ${i + 1}`}</strong>
+            <div className={styles.headerBtns}>
+              <Button size="sm" variant="secondary" fill="text" onClick={() => move(i, -1)} title="Move up">
+                ↑
+              </Button>
+              <Button size="sm" variant="secondary" fill="text" onClick={() => move(i, 1)} title="Move down">
+                ↓
+              </Button>
+              <Button size="sm" variant="destructive" fill="text" onClick={() => remove(i)}>
+                Remove
+              </Button>
+            </div>
           </div>
 
           <Field label="Name">
@@ -160,22 +157,26 @@ export const LayersEditor: React.FC<Props> = ({ value, onChange }) => {
           <Field label="Visible by default">
             <Switch value={layer.visible} onChange={(e) => update(i, { visible: e.currentTarget.checked })} />
           </Field>
-        </Collapse>
+        </div>
       ))}
-
-      <Button icon="plus" variant="secondary" onClick={add} className={styles.add}>
-        Add layer
-      </Button>
     </div>
   );
 };
 
 const getStyles = (theme: GrafanaTheme2) => ({
-  toolbar: css({
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: theme.spacing(0.5),
+  addTop: css({ marginBottom: theme.spacing(1) }),
+  empty: css({ color: theme.colors.text.secondary, marginBottom: theme.spacing(1) }),
+  card: css({
+    border: `1px solid ${theme.colors.border.weak}`,
+    borderRadius: 2,
+    padding: theme.spacing(1),
     marginBottom: theme.spacing(1),
   }),
-  add: css({ marginTop: theme.spacing(1) }),
+  header: css({
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing(1),
+  }),
+  headerBtns: css({ display: 'flex', gap: theme.spacing(0.5) }),
 });
