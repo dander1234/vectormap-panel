@@ -5,7 +5,7 @@
 // controlled lifecycle points). Each effect below is numbered and commented.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { PanelProps, GrafanaTheme2 } from '@grafana/data';
+import { PanelProps, GrafanaTheme2, DataFrame } from '@grafana/data';
 import { Button, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import maplibregl from 'maplibre-gl';
@@ -27,6 +27,13 @@ const layerIdFor = (layerId: string) => VT_LAYER_PREFIX + layerId;
 // overlays (so changing it never disturbs the overlay layers).
 const BASEMAP_SOURCE_ID = 'basemap';
 const BASEMAP_LAYER_ID = 'basemap';
+
+// Markers built from the panel's query data live in one GeoJSON source + circle
+// layer, kept on top of the vector tile overlays.
+const MARKERS_SOURCE_ID = 'markers-src';
+const MARKERS_LAYER_ID = 'markers-layer';
+const LAT_NAMES = ['latitude', 'lat', 'y'];
+const LNG_NAMES = ['longitude', 'long', 'lng', 'lon', 'x'];
 
 // Color used to draw a clicked/selected feature.
 const HIGHLIGHT_COLOR = '#00e5ff';
@@ -121,6 +128,9 @@ const buildPropsTable = (props: Record<string, unknown>, cfg: TooltipRenderConfi
   const excludeRe = compileRegex(cfg.exclude);
 
   let entries = Object.entries(props).filter(([key, value]) => {
+    if (key.startsWith('__')) {
+      return false; // internal props (e.g. __color/__radius on markers)
+    }
     if (cfg.hideEmpty && isEmptyValue(value)) {
       return false;
     }
@@ -159,15 +169,92 @@ const buildPropsTable = (props: Record<string, unknown>, cfg: TooltipRenderConfi
   return `${titleHtml}<div style="max-height:260px;overflow:auto"><table style="border-collapse:collapse;font-size:12px;line-height:1.45">${rows}</table></div>`;
 };
 
+// Find a field by explicit name, else by a list of common fallback names.
+const pickField = (frame: DataFrame, explicit: string, fallbacks: string[]) =>
+  explicit
+    ? frame.fields.find((f) => f.name === explicit)
+    : frame.fields.find((f) => fallbacks.includes(f.name.toLowerCase()));
+
+// The subset of options the marker builder needs (keeps the effect's deps tight).
+type MarkerOptions = Pick<
+  VectormapOptions,
+  'latField' | 'lngField' | 'markerColorField' | 'markerFixedColor' | 'markerSizeField' | 'markerSize' | 'markerSizeMax'
+>;
+
+// Build a GeoJSON FeatureCollection of markers from the panel's data frames
+// (works with any datasource — SQL, InfluxDB, …). Color comes from the chosen
+// field's STANDARD config (field.display → thresholds / color scheme); size from
+// a numeric field scaled into [markerSize, markerSizeMax]. Each feature keeps all
+// the row's values as properties (for the tooltip). Returns `any` to avoid the
+// GeoJSON type imports — it's a valid FeatureCollection at runtime.
+const buildMarkerFeatures = (series: DataFrame[], opts: MarkerOptions, resolveColor: (c: string) => string): any => {
+  const features: any[] = [];
+  const fixedColor = resolveColor(opts.markerFixedColor || '#1f77b4');
+
+  for (const frame of series) {
+    const latField = pickField(frame, opts.latField, LAT_NAMES);
+    const lngField = pickField(frame, opts.lngField, LNG_NAMES);
+    if (!latField || !lngField) {
+      continue;
+    }
+    const colorField = opts.markerColorField ? frame.fields.find((f) => f.name === opts.markerColorField) : undefined;
+    const sizeField = opts.markerSizeField ? frame.fields.find((f) => f.name === opts.markerSizeField) : undefined;
+
+    // Range of the size field, for linear scaling.
+    let sMin = Infinity;
+    let sMax = -Infinity;
+    if (sizeField) {
+      for (const v of sizeField.values) {
+        const n = Number(v);
+        if (Number.isFinite(n)) {
+          sMin = Math.min(sMin, n);
+          sMax = Math.max(sMax, n);
+        }
+      }
+    }
+
+    for (let i = 0; i < frame.length; i++) {
+      const lat = Number(latField.values[i]);
+      const lng = Number(lngField.values[i]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        continue;
+      }
+      // Color: from the field's display (standard config), else the fixed color.
+      let color = fixedColor;
+      if (colorField?.display) {
+        const c = colorField.display(colorField.values[i]).color;
+        if (c) {
+          color = c;
+        }
+      }
+      // Size: scale the size field into [markerSize, markerSizeMax], else fixed.
+      let radius = opts.markerSize;
+      if (sizeField && sMax > sMin) {
+        const n = Number(sizeField.values[i]);
+        const t = Number.isFinite(n) ? (n - sMin) / (sMax - sMin) : 0;
+        radius = opts.markerSize + t * (opts.markerSizeMax - opts.markerSize);
+      }
+      const properties: Record<string, unknown> = {};
+      for (const f of frame.fields) {
+        properties[f.name] = f.values[i];
+      }
+      properties.__color = color;
+      properties.__radius = radius;
+      features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties });
+    }
+  }
+  return { type: 'FeatureCollection', features };
+};
+
 interface Props extends PanelProps<VectormapOptions> {}
 
-export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, width, height }) => {
+export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data, width, height }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const theme = useTheme2();
   // Interactivity refs: the open attribute popup, and the highlighted feature.
   const popupRef = useRef<maplibregl.Popup | null>(null);
-  const highlightRef = useRef<{ source: string; sourceLayer: string; id: string | number } | null>(null);
+  const highlightRef = useRef<{ source: string; sourceLayer?: string; id: string | number } | null>(null);
   // Theme-aware CSS class for the popup container (see getPopupStyles).
   const popupStyles = useStyles2(getPopupStyles);
 
@@ -252,9 +339,12 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
         return; // 'none' (or custom with empty URL) — leave just the background
       }
       map.addSource(BASEMAP_SOURCE_ID, spec);
-      // Insert below the first overlay so overlays always stay on top.
-      const firstVt = (map.getStyle().layers ?? []).find((l) => l.id.startsWith(VT_LAYER_PREFIX))?.id;
-      map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_SOURCE_ID }, firstVt);
+      // Insert below the first overlay (vector tile layer or markers) so all
+      // overlays stay on top of the basemap.
+      const firstOverlay = (map.getStyle().layers ?? []).find(
+        (l) => l.id.startsWith(VT_LAYER_PREFIX) || l.id === MARKERS_LAYER_ID
+      )?.id;
+      map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_SOURCE_ID }, firstOverlay);
     };
     if (map.isStyleLoaded()) {
       applyBasemap();
@@ -373,6 +463,10 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
           console.error(`[vectormap] failed to add layer "${layer.name}":`, err);
         }
       }
+      // Keep data markers above the (re-added) vector tile overlays.
+      if (map.getLayer(MARKERS_LAYER_ID)) {
+        map.moveLayer(MARKERS_LAYER_ID);
+      }
     };
 
     if (map.isStyleLoaded()) {
@@ -385,14 +479,80 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
     };
   }, [options.layers, theme]);
 
+  // EFFECT M — build/update the data markers (one GeoJSON source + circle layer)
+  // from the panel's query results. Uses the source's setData to update
+  // efficiently on each refresh; kept on top of the vector tile overlays.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    const applyMarkers = () => {
+      const markerOpts: MarkerOptions = {
+        latField: options.latField,
+        lngField: options.lngField,
+        markerColorField: options.markerColorField,
+        markerFixedColor: options.markerFixedColor,
+        markerSizeField: options.markerSizeField,
+        markerSize: options.markerSize,
+        markerSizeMax: options.markerSizeMax,
+      };
+      const fc = buildMarkerFeatures(data?.series ?? [], markerOpts, theme.visualization.getColorByName);
+      const existing = map.getSource(MARKERS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+      if (existing) {
+        existing.setData(fc);
+      } else {
+        // generateId assigns numeric feature ids so feature-state highlight works.
+        map.addSource(MARKERS_SOURCE_ID, { type: 'geojson', data: fc, generateId: true });
+        map.addLayer({
+          id: MARKERS_LAYER_ID,
+          type: 'circle',
+          source: MARKERS_SOURCE_ID,
+          paint: {
+            // Per-feature color/radius come from the GeoJSON properties we computed.
+            'circle-color': whenHighlighted(HIGHLIGHT_COLOR, ['get', '__color']),
+            'circle-radius': whenHighlighted(['+', ['get', '__radius'], 3], ['get', '__radius']),
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#ffffff',
+          },
+        });
+      }
+      map.setLayoutProperty(MARKERS_LAYER_ID, 'visibility', options.showMarkers ? 'visible' : 'none');
+    };
+    if (map.isStyleLoaded()) {
+      applyMarkers();
+    } else {
+      map.once('load', applyMarkers);
+    }
+    return () => {
+      map.off('load', applyMarkers);
+    };
+  }, [
+    data,
+    options.showMarkers,
+    options.latField,
+    options.lngField,
+    options.markerColorField,
+    options.markerFixedColor,
+    options.markerSizeField,
+    options.markerSize,
+    options.markerSizeMax,
+    theme,
+  ]);
+
   // EFFECT 5 — feature interactivity across ALL vector tile layers.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) {
       return;
     }
-    const ourLayerIds = (): string[] =>
-      (map.getStyle().layers ?? []).map((l) => l.id).filter((id) => id.startsWith(VT_LAYER_PREFIX));
+    const ourLayerIds = (): string[] => {
+      const ids = (map.getStyle().layers ?? []).map((l) => l.id).filter((id) => id.startsWith(VT_LAYER_PREFIX));
+      if (map.getLayer(MARKERS_LAYER_ID)) {
+        ids.push(MARKERS_LAYER_ID);
+      }
+      return ids;
+    };
 
     const clearHighlight = () => {
       if (highlightRef.current) {
@@ -413,11 +573,16 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
       if (!f || f.id === undefined) {
         return;
       }
-      const target = { source: f.source, sourceLayer: f.sourceLayer as string, id: f.id };
+      // GeoJSON sources (markers) have no sourceLayer; vector sources need it.
+      const target: { source: string; sourceLayer?: string; id: string | number } = { source: f.source, id: f.id };
+      if (f.sourceLayer) {
+        target.sourceLayer = f.sourceLayer;
+      }
       map.setFeatureState(target, { highlighted: true });
       highlightRef.current = target;
 
-      // Resolve the clicked feature's LAYER to pick up its per-layer tooltip rules.
+      // Resolve the clicked feature's LAYER to pick up its per-layer tooltip rules
+      // (markers won't match a layer config and fall back to defaults).
       const layerCfgId = String(f.layer?.id ?? '').slice(VT_LAYER_PREFIX.length);
       const layerCfg = renderRef.current.layers.find((l) => l.id === layerCfgId);
       const cfg: TooltipRenderConfig = {

@@ -60,6 +60,17 @@ export interface VectormapOptions {
   basemap: BasemapKind;
   basemapUrl: string; // XYZ raster template, used only when basemap === 'custom'
 
+  // --- Markers from panel query data (works with any datasource: SQL, InfluxDB,
+  // ...). Points are read from the data frames' lat/long fields. ---
+  showMarkers: boolean;
+  latField: string; // field name; '' = auto-detect by common names
+  lngField: string; // field name; '' = auto-detect
+  markerColorField: string; // field whose standard config drives color; '' = fixed
+  markerFixedColor: string; // used when no color field
+  markerSizeField: string; // numeric field to scale radius; '' = fixed size
+  markerSize: number; // base radius (px); also the min when scaling by a field
+  markerSizeMax: number; // max radius (px) when scaling by markerSizeField
+
   // The vector tile layers to render, top-most last.
   layers: VectorTileLayerConfig[];
 }
