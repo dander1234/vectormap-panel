@@ -16,12 +16,35 @@ loads the tiles in view at the current zoom.
 
 ## Features
 
-- Multiple configurable vector tile layers (tile URL, source layer, paint
-  properties, optional filter) — all set through panel options.
-- Markers plotted from panel query results (lat/long fields), styled with
-  Grafana standard field configs.
-- Tooltips and data links for both markers and vector tile features.
-- Grafana template-variable interpolation in tile URLs and queries.
+- **Vector tile layers** (MVT/PBF) — tile URL, source layer, geometry/paint,
+  optional MapLibre filter, and TMS/XYZ scheme (GeoServer GWC is TMS).
+- **Marker layers from query data** (any datasource — SQL, InfluxDB, …), bound
+  per query (`refId`), colored and sized by Grafana standard field configs, with
+  selectable **shapes**: circle, square, triangle, diamond, star, cross, hexagon.
+- **Unified on-map layer control** — show/hide and group both tile and marker
+  layers from one box.
+- **Per-layer tooltips** — include/exclude fields by regex, hide empty values, a
+  title field, and **templated links** (`${field}` placeholders from the clicked
+  feature plus Grafana dashboard variables).
+- **Basemaps** — OpenStreetMap, CARTO light/dark, Esri satellite, blank, or a
+  custom XYZ raster URL.
+- **"Set initial view"** button to capture the current center/zoom into options.
+- **Grafana template-variable interpolation** in tile/basemap URLs and filters.
+
+## Install (prebuilt)
+
+To run the plugin in another Grafana without building it:
+
+1. Download the release zip (`dander1234-vectormap-panel-<version>.zip`).
+2. Unzip it into Grafana's plugins directory so you have
+   `<plugins>/dander1234-vectormap-panel/plugin.json`.
+3. Allow the unsigned plugin — in `grafana.ini`:
+   ```ini
+   [plugins]
+   allow_loading_unsigned_plugins = dander1234-vectormap-panel
+   ```
+   or via env: `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=dander1234-vectormap-panel`.
+4. Restart Grafana and add a **Vectormap** panel.
 
 ## Development
 
