@@ -3,6 +3,45 @@
 Running notes on features we've deliberately deferred, with the design thinking
 captured so we can pick them up cleanly later. These are NOT yet implemented.
 
+## Point marker shapes (symbol layers)
+
+**Status:** planned. Today point geometry renders as MapLibre `circle` layers
+(circles only). We want distinct shapes per layer — square, triangle, diamond,
+star, cross, hexagon, etc. — to distinguish handholes / vaults / splice cases,
+and eventually user-uploaded custom shapes (SVG/PNG).
+
+**Why it's not trivial:** MapLibre has no shape primitives beyond `circle`. Other
+shapes require `symbol` layers with `icon-image`, and each image must be
+registered on the map via `map.addImage()`.
+
+**Coloring choice:**
+- *Pre-colored canvas icons (recommended):* render each shape on an offscreen
+  canvas in the layer's configured color, `addImage` it, reference it from a
+  symbol layer. Simple, crisp, no extra deps. Trade-off: not recolorable at
+  runtime (color baked per layer).
+- *SDF icons:* single-channel images recolorable via `icon-color` (enables
+  data-driven color and recolor-on-highlight). More complex — needs a distance
+  transform to generate. Only worth it if we need data-driven marker COLOR.
+
+**Highlight:** pre-colored icons can't be recolored, so highlight a selected
+point by scaling the icon up (`icon-size` via `['case', ['feature-state',...]]`)
+and/or a halo, instead of the cyan recolor used for line/fill/circle.
+
+**Plan:**
+1. Add `pointShape` to the layer config (circle | square | triangle | diamond |
+   star | cross | hexagon). Applies to point/circle geometry.
+2. Generate the shape icon on a canvas at the layer's color + size; addImage per
+   layer (keyed by shape+color+size so identical icons are shared).
+3. Render via a `symbol` layer: `icon-image`, `icon-size`,
+   `icon-allow-overlap: true`, `icon-ignore-placement: true` (so dense markers
+   aren't dropped). Keep plain `circle` for the circle shape (crisper/faster).
+4. Highlight via `icon-size` feature-state.
+5. Reuse the same shape system for Phase 4 data markers.
+
+**Future — custom upload:** let users supply an SVG/PNG (data URL in options, or
+an uploaded file); addImage it and expose as a shape choice. Watch panel-options
+size limits when embedding image data.
+
 ## Tooltip (feature popup) styling + content filtering
 
 **Status:** deferred. Today the click popup is a plain HTML attribute table
