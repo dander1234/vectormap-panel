@@ -46,6 +46,10 @@ To run the plugin in another Grafana without building it:
    or via env: `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=dander1234-vectormap-panel`.
 4. Restart Grafana and add a **Vectormap** panel.
 
+**Full step-by-step deployment instructions** (prebuilt and from-source,
+Grafana config, Docker, CORS/tile-server notes, upgrading) are in
+[docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Development
 
 Requires Node.js >= 22.
