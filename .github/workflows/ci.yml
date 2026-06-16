@@ -89,9 +89,13 @@ jobs:
             echo "has-e2e=true" >> $GITHUB_OUTPUT
           fi
 
+      # Community plugins are signed by Grafana during the review/approval
+      # process — self-signing an UNPUBLISHED plugin returns HTTP 409. Keep this
+      # off until approved, then set the repo variable ENABLE_PLUGIN_SIGNING=true
+      # (Settings -> Secrets and variables -> Actions -> Variables) to enable it.
       - name: Sign plugin
         run: npm run sign
-        if: ${{ env.GRAFANA_ACCESS_POLICY_TOKEN != '' }}
+        if: ${{ env.GRAFANA_ACCESS_POLICY_TOKEN != '' && vars.ENABLE_PLUGIN_SIGNING == 'true' }}
 
       - name: Get plugin metadata
         id: metadata
