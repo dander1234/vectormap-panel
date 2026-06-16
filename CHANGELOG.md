@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2
+
+- Build: enable build provenance attestation in the release workflow
+  (`attestation: true` on the build action) so the published zip carries a
+  verifiable sigstore attestation tying it to this source.
+
 ## 1.2.1
 
 - Fix: remove the direct `maplibre-gl` stylesheet import (disallowed by Grafana
