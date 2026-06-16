@@ -19,10 +19,17 @@ import {
 } from '../types';
 import { LayerControl, ControlLayer, LegendShape } from './LayerControl';
 import { ensureShapeIcon, iconIdForShape, SHAPE_ICON_EFFECTIVE } from '../shapeIcons';
+import { MAPLIBRE_CSS } from '../maplibreCss';
 
-// MapLibre's stylesheet (positions canvas + controls). webpack's style-loader
-// injects it at runtime.
-import 'maplibre-gl/dist/maplibre-gl.css';
+// MapLibre's stylesheet (positions the canvas, controls, and popups). Grafana
+// plugin code rules forbid importing stylesheet files directly, so instead of a
+// direct stylesheet import we keep the rules as a string (see maplibreCss) and
+// inject them through emotion's css(), scoped to the map shell element below.
+// Emotion rewrites each `.maplibregl-*` rule to `.<shell> .maplibregl-*`, so the
+// styles apply only inside this panel's map (no global leakage) — every MapLibre
+// element (canvas, controls, attribution, popups) lives inside the shell, so
+// descendant scoping covers them all.
+const mapShellClass = css(MAPLIBRE_CSS);
 
 // Each configured layer becomes a MapLibre source + draw layer, derived from the
 // layer's stable id. Prefixes let us find "our" overlays vs the basemap.
@@ -901,7 +908,7 @@ export const VectormapPanel: React.FC<Props> = ({
   }
 
   return (
-    <div style={{ width, height, position: 'relative', overflow: 'hidden' }}>
+    <div className={mapShellClass} style={{ width, height, position: 'relative', overflow: 'hidden' }}>
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
       <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}>
         <Button

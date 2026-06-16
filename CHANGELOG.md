@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1
+
+- Fix: remove the direct `maplibre-gl` stylesheet import (disallowed by Grafana
+  plugin code rules). The MapLibre CSS is now injected via emotion, scoped to the
+  map container, so there is no global CSS and no direct stylesheet import.
+
 ## 1.2.0
 
 - Fix: legend icons in the on-map layer control now match the shape drawn on the
