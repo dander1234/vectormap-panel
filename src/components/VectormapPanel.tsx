@@ -33,6 +33,32 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 const VT_SOURCE_ID = 'vectormap-source';
 const VT_LAYER_ID = 'vectormap-layer';
 
+// Color used to draw a clicked/selected feature. Bright cyan stands out over
+// most basemaps and over most user-chosen line/fill colors.
+const HIGHLIGHT_COLOR = '#00e5ff';
+
+// Escape a value for safe insertion into the popup HTML. Feature attributes are
+// untrusted text and could contain characters that break (or inject) markup.
+const escapeHtml = (value: unknown): string =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+// Build a small scrollable attribute table from a feature's MVT properties.
+const buildPropsTable = (props: Record<string, unknown>): string => {
+  const rows = Object.entries(props)
+    .map(
+      ([k, v]) =>
+        `<tr><td style="padding:1px 6px 1px 0;color:#888;white-space:nowrap;vertical-align:top">${escapeHtml(
+          k
+        )}</td><td style="padding:1px 0">${escapeHtml(v)}</td></tr>`
+    )
+    .join('');
+  return `<div style="max-height:240px;overflow:auto;font-size:11px;line-height:1.35"><table style="border-collapse:collapse">${rows}</table></div>`;
+};
+
 // PanelProps carries everything Grafana gives a panel: options, query data,
 // width/height (in pixels), the time range, and more. Typing it with our
 // VectormapOptions makes `props.options` strongly typed.
@@ -50,6 +76,11 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
   // named palette colors like 'dark-red', not CSS) into real CSS colors that
   // MapLibre can parse.
   const theme = useTheme2();
+  // Interactivity refs: the currently-open attribute popup, and the currently
+  // highlighted feature (so we can clear its highlight before selecting a new
+  // one). Refs, not state — changing them must not trigger a React re-render.
+  const popupRef = useRef<maplibregl.Popup | null>(null);
+  const highlightRef = useRef<{ source: string; sourceLayer: string; id: string | number } | null>(null);
 
   // EFFECT 1 — create the map exactly once, on mount.
   //
@@ -172,6 +203,10 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
       if (map.getSource(VT_SOURCE_ID)) {
         map.removeSource(VT_SOURCE_ID);
       }
+      // Drop any popup/highlight tied to the layer we just tore down.
+      popupRef.current?.remove();
+      popupRef.current = null;
+      highlightRef.current = null;
 
       // Nothing to draw until both a tile URL and the in-tile source-layer name
       // are provided. (Clearing either field removes the layer — handled above.)
@@ -213,7 +248,18 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
             type: 'fill',
             source: VT_SOURCE_ID,
             'source-layer': options.sourceLayer,
-            paint: { 'fill-color': fillColor, 'fill-opacity': fillOpacity },
+            paint: {
+              // ['feature-state','highlighted'] is true only for the clicked
+              // feature (toggled in EFFECT 5) — swap to the highlight color and
+              // bump opacity so the selection stands out.
+              'fill-color': ['case', ['boolean', ['feature-state', 'highlighted'], false], HIGHLIGHT_COLOR, fillColor],
+              'fill-opacity': [
+                'case',
+                ['boolean', ['feature-state', 'highlighted'], false],
+                Math.min(fillOpacity + 0.3, 1),
+                fillOpacity,
+              ],
+            },
           });
         } else {
           map.addLayer({
@@ -221,7 +267,10 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
             type: 'line',
             source: VT_SOURCE_ID,
             'source-layer': options.sourceLayer,
-            paint: { 'line-color': lineColor, 'line-width': lineWidth },
+            paint: {
+              'line-color': ['case', ['boolean', ['feature-state', 'highlighted'], false], HIGHLIGHT_COLOR, lineColor],
+              'line-width': ['case', ['boolean', ['feature-state', 'highlighted'], false], lineWidth + 3, lineWidth],
+            },
           });
         }
 
@@ -265,6 +314,80 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
     options.filterExpression,
     theme,
   ]);
+
+  // EFFECT 5 — feature interactivity: click a vector tile feature to highlight
+  // it and show its attributes in a popup; show a pointer cursor on hover.
+  //
+  // Bound once after the map exists. Handlers are keyed by the stable VT_LAYER_ID,
+  // so they keep working across EFFECT 4's layer rebuilds. The clicked feature
+  // reports its own source / sourceLayer / id, so the highlight logic needs no
+  // option values and stays self-contained.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    const clearHighlight = () => {
+      if (highlightRef.current) {
+        map.setFeatureState(highlightRef.current, { highlighted: false });
+        highlightRef.current = null;
+      }
+    };
+
+    const onClick = (e: maplibregl.MapMouseEvent) => {
+      // Ignore clicks unless our vector tile layer is present.
+      if (!map.getLayer(VT_LAYER_ID)) {
+        return;
+      }
+      const features = map.queryRenderedFeatures(e.point, { layers: [VT_LAYER_ID] });
+
+      // Every click first clears the previous selection + popup.
+      clearHighlight();
+      popupRef.current?.remove();
+      popupRef.current = null;
+
+      const f = features[0];
+      if (!f || f.id === undefined) {
+        return; // clicked empty space (or a feature without an id) — just cleared
+      }
+
+      // Highlight via feature-state. The feature carries its own source/sourceLayer.
+      const target = { source: f.source, sourceLayer: f.sourceLayer as string, id: f.id };
+      map.setFeatureState(target, { highlighted: true });
+      highlightRef.current = target;
+
+      // Attribute popup at the click point. closeOnClick is off because we manage
+      // popups ourselves; closing it (via its X) also drops the highlight.
+      const popup = new maplibregl.Popup({ maxWidth: '340px', closeOnClick: false })
+        .setLngLat(e.lngLat)
+        .setHTML(buildPropsTable(f.properties ?? {}))
+        .addTo(map);
+      popup.on('close', clearHighlight);
+      popupRef.current = popup;
+    };
+
+    const onEnter = () => {
+      map.getCanvas().style.cursor = 'pointer';
+    };
+    const onLeave = () => {
+      map.getCanvas().style.cursor = '';
+    };
+
+    map.on('click', onClick);
+    map.on('mouseenter', VT_LAYER_ID, onEnter);
+    map.on('mouseleave', VT_LAYER_ID, onLeave);
+
+    return () => {
+      map.off('click', onClick);
+      map.off('mouseenter', VT_LAYER_ID, onEnter);
+      map.off('mouseleave', VT_LAYER_ID, onLeave);
+      popupRef.current?.remove();
+      popupRef.current = null;
+    };
+    // Bind once: mapRef is set by EFFECT 1, which runs before this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Click handler for the "Set initial view" button. It reads the map's CURRENT
   // center and zoom and persists them as the panel's initial-view options via
