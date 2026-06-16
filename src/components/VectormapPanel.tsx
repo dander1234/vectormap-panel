@@ -114,9 +114,18 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
   // Runtime layer visibility (driven by the on-map LayerControl). Keyed by
   // layer.id. We also mirror it in a ref so the layer-build effect can read the
   // latest value even when it runs deferred (on the style 'load' event).
+  // `visibility` holds only EXPLICIT runtime overrides (layer.id -> shown?). A
+  // layer with no entry uses its configured `visible` default. Storing only
+  // overrides means we never need an effect to sync it with the layer set.
   const [visibility, setVisibility] = useState<Record<string, boolean>>({});
+  // Mirror it in a ref so EFFECT 4 (which may run deferred on 'load', and which
+  // we don't want re-running on every toggle) can read the latest overrides
+  // without taking `visibility` as a dependency. Updated in an effect, not during
+  // render (mutating a ref during render is disallowed).
   const visibilityRef = useRef(visibility);
-  visibilityRef.current = visibility;
+  useEffect(() => {
+    visibilityRef.current = visibility;
+  }, [visibility]);
 
   // EFFECT 1 — create the map exactly once, on mount, with an EMPTY style plus a
   // background layer. The actual basemap is added by EFFECT B so it can be
@@ -277,12 +286,10 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
             try {
               map.setFilter(lId, JSON.parse(layer.filterExpression));
             } catch (err) {
-              // eslint-disable-next-line no-console
               console.warn(`[vectormap] invalid filter for layer "${layer.name}":`, err);
             }
           }
         } catch (err) {
-          // eslint-disable-next-line no-console
           console.error(`[vectormap] failed to add layer "${layer.name}":`, err);
         }
       }
@@ -352,21 +359,7 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
       popupRef.current?.remove();
       popupRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // EFFECT 6 — keep the runtime visibility state in step with the configured
-  // layer set: new layers default to their `visible`, removed layers drop out,
-  // existing toggles are preserved.
-  useEffect(() => {
-    setVisibility((prev) => {
-      const next: Record<string, boolean> = {};
-      for (const l of options.layers ?? []) {
-        next[l.id] = l.id in prev ? prev[l.id] : l.visible !== false;
-      }
-      return next;
-    });
-  }, [options.layers]);
 
   // Toggle a layer's visibility from the LayerControl: update state + flip the
   // MapLibre layout property immediately.
@@ -395,6 +388,13 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
     });
   };
 
+  // Effective visibility shown in the LayerControl = explicit override, else the
+  // layer's configured default. Derived during render (no state/effect needed).
+  const effectiveVisibility: Record<string, boolean> = {};
+  for (const l of options.layers ?? []) {
+    effectiveVisibility[l.id] = visibility[l.id] ?? l.visible !== false;
+  }
+
   return (
     <div style={{ width, height, position: 'relative', overflow: 'hidden' }}>
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
@@ -408,7 +408,7 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, widt
           Set initial view
         </Button>
       </div>
-      <LayerControl layers={options.layers ?? []} visibility={visibility} onToggle={handleToggle} />
+      <LayerControl layers={options.layers ?? []} visibility={effectiveVisibility} onToggle={handleToggle} />
     </div>
   );
 };
