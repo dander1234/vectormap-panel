@@ -9,7 +9,7 @@ import { PanelProps, GrafanaTheme2, DataFrame } from '@grafana/data';
 import { Button, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import maplibregl from 'maplibre-gl';
-import { VectormapOptions, BasemapKind, VectorTileLayerConfig, MarkerLayerConfig } from '../types';
+import { VectormapOptions, BasemapKind, VectorTileLayerConfig, MarkerLayerConfig, TooltipLink } from '../types';
 import { LayerControl, ControlLayer } from './LayerControl';
 
 // MapLibre's stylesheet (positions canvas + controls). webpack's style-loader
@@ -105,10 +105,34 @@ interface TooltipRenderConfig {
   include: string;
   exclude: string;
   titleField: string;
+  links: TooltipLink[];
+  // Grafana's variable interpolator (from PanelProps) — applied to link URLs so
+  // dashboard template variables resolve. Identity fn when unavailable.
+  replaceVariables: (s: string) => string;
   keyColor: string;
   titleColor: string;
   mutedColor: string;
+  linkColor: string;
 }
+
+// Reject dangerous URL schemes; allow http(s), mailto, tel, and relative URLs.
+const sanitizeUrl = (url: string): string | null => {
+  const u = url.trim();
+  if (!u || /^\s*(javascript|data|vbscript):/i.test(u)) {
+    return null;
+  }
+  return u;
+};
+
+// Build a link URL from its template: first substitute ${field} placeholders
+// from the clicked feature's own attributes (URL-encoded), then run Grafana's
+// variable interpolation for any remaining ${var} (dashboard variables).
+const fillUrl = (tpl: string, props: Record<string, unknown>, replaceVariables: (s: string) => string): string => {
+  const withFields = tpl.replace(/\$\{([\w.]+)\}/g, (m, key) =>
+    Object.prototype.hasOwnProperty.call(props, key) ? encodeURIComponent(String(props[key] ?? '')) : m
+  );
+  return replaceVariables(withFields);
+};
 
 // Compile a user regex, returning null on blank/invalid (so a bad regex never
 // breaks the popup).
@@ -157,10 +181,6 @@ const buildPropsTable = (props: Record<string, unknown>, cfg: TooltipRenderConfi
     }
   }
 
-  if (!entries.length && !titleHtml) {
-    return `<div style="color:${cfg.mutedColor};font-size:12px">No attributes to show</div>`;
-  }
-
   const rows = entries
     .map(
       ([key, value]) =>
@@ -169,7 +189,34 @@ const buildPropsTable = (props: Record<string, unknown>, cfg: TooltipRenderConfi
         )}</td><td style="padding:2px 0;vertical-align:top">${escapeHtml(value)}</td></tr>`
     )
     .join('');
-  return `${titleHtml}<div style="max-height:260px;overflow:auto"><table style="border-collapse:collapse;font-size:12px;line-height:1.45">${rows}</table></div>`;
+  const tableHtml = entries.length
+    ? `<div style="max-height:260px;overflow:auto"><table style="border-collapse:collapse;font-size:12px;line-height:1.45">${rows}</table></div>`
+    : '';
+
+  // Links row: each template filled from this feature's attributes + dashboard
+  // variables, then sanitized. Dropped if the result is empty/unsafe.
+  const linkParts = (cfg.links ?? [])
+    .map((lk) => {
+      const url = sanitizeUrl(fillUrl(lk.url, props, cfg.replaceVariables));
+      if (!url) {
+        return '';
+      }
+      const target = lk.openInNewTab ? ' target="_blank" rel="noopener noreferrer"' : '';
+      return `<a href="${escapeHtml(url)}"${target} style="color:${cfg.linkColor};text-decoration:underline">${escapeHtml(
+        lk.label || url
+      )}</a>`;
+    })
+    .filter(Boolean);
+  const linksHtml = linkParts.length
+    ? `<div style="margin-top:8px;padding-top:6px;border-top:1px solid ${cfg.mutedColor};font-size:12px;display:flex;flex-wrap:wrap;gap:4px 12px">${linkParts.join(
+        ''
+      )}</div>`
+    : '';
+
+  if (!titleHtml && !tableHtml && !linksHtml) {
+    return `<div style="color:${cfg.mutedColor};font-size:12px">No attributes to show</div>`;
+  }
+  return `${titleHtml}${tableHtml}${linksHtml}`;
 };
 
 // Find a field by explicit name, else by a list of common fallback names.
@@ -249,7 +296,14 @@ const buildMarkerFeatures = (series: DataFrame[], cfg: MarkerLayerConfig, resolv
 
 interface Props extends PanelProps<VectormapOptions> {}
 
-export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data, width, height }) => {
+export const VectormapPanel: React.FC<Props> = ({
+  options,
+  onOptionsChange,
+  data,
+  width,
+  height,
+  replaceVariables,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const theme = useTheme2();
@@ -269,7 +323,18 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
     keyColor: string;
     titleColor: string;
     mutedColor: string;
-  }>({ layers: [], markerLayers: [], popupClass: '', keyColor: '#888', titleColor: '#222', mutedColor: '#aaa' });
+    linkColor: string;
+    replaceVariables: (s: string) => string;
+  }>({
+    layers: [],
+    markerLayers: [],
+    popupClass: '',
+    keyColor: '#888',
+    titleColor: '#222',
+    mutedColor: '#aaa',
+    linkColor: '#3d71d9',
+    replaceVariables: (s) => s,
+  });
   useEffect(() => {
     renderRef.current = {
       layers: options.layers ?? [],
@@ -278,8 +343,10 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
       keyColor: theme.colors.text.secondary,
       titleColor: theme.colors.text.primary,
       mutedColor: theme.colors.text.disabled,
+      linkColor: theme.colors.text.link,
+      replaceVariables: replaceVariables ?? ((s) => s),
     };
-  }, [options.layers, options.markerLayers, popupStyles.popup, theme]);
+  }, [options.layers, options.markerLayers, popupStyles.popup, theme, replaceVariables]);
 
   // Runtime layer visibility (driven by the on-map LayerControl). Keyed by
   // layer.id. We also mirror it in a ref so the layer-build effect can read the
@@ -594,7 +661,7 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
       const clickedId = String(f.layer?.id ?? '');
       const layerCfg: Pick<
         VectorTileLayerConfig,
-        'tooltipHideEmpty' | 'tooltipInclude' | 'tooltipExclude' | 'tooltipTitleField'
+        'tooltipHideEmpty' | 'tooltipInclude' | 'tooltipExclude' | 'tooltipTitleField' | 'tooltipLinks'
       > | undefined = clickedId.startsWith(MK_LAYER_PREFIX)
         ? renderRef.current.markerLayers.find((l) => l.id === clickedId.slice(MK_LAYER_PREFIX.length))
         : renderRef.current.layers.find((l) => l.id === clickedId.slice(VT_LAYER_PREFIX.length));
@@ -603,9 +670,12 @@ export const VectormapPanel: React.FC<Props> = ({ options, onOptionsChange, data
         include: layerCfg?.tooltipInclude ?? '',
         exclude: layerCfg?.tooltipExclude ?? '',
         titleField: layerCfg?.tooltipTitleField ?? '',
+        links: layerCfg?.tooltipLinks ?? [],
+        replaceVariables: renderRef.current.replaceVariables,
         keyColor: renderRef.current.keyColor,
         titleColor: renderRef.current.titleColor,
         mutedColor: renderRef.current.mutedColor,
+        linkColor: renderRef.current.linkColor,
       };
       const popup = new maplibregl.Popup({ maxWidth: '360px', closeOnClick: false, className: renderRef.current.popupClass })
         .setLngLat(e.lngLat)

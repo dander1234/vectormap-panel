@@ -5,11 +5,12 @@
 // the current array as `value` and reports edits through `onChange`. We never
 // mutate `value` in place — every change builds a NEW array.
 
-import React from 'react';
+import React, { useState } from 'react';
 import { StandardEditorProps, SelectableValue, GrafanaTheme2 } from '@grafana/data';
-import { Button, ColorPicker, Field, Input, Select, Switch, useStyles2 } from '@grafana/ui';
+import { Button, ColorPicker, Field, Icon, Input, Select, Switch, useStyles2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import { VectorTileLayerConfig, GeometryType, TileScheme, createDefaultLayer } from '../types';
+import { TooltipLinksEditor } from './TooltipLinksEditor';
 
 const SCHEME_OPTIONS: Array<SelectableValue<TileScheme>> = [
   { label: 'XYZ', value: 'xyz' },
@@ -33,9 +34,18 @@ export const LayersEditor: React.FC<Props> = ({ value, onChange }) => {
   const styles = useStyles2(getStyles);
   const layers = value ?? [];
 
+  // Which cards are expanded (by layer id). Cards start COLLAPSED so a long list
+  // stays compact; a newly added layer auto-expands so you can fill it in.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const toggle = (id: string) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
+
   const update = (index: number, patch: Partial<VectorTileLayerConfig>) =>
     onChange(layers.map((l, i) => (i === index ? { ...l, ...patch } : l)));
-  const add = () => onChange([...layers, createDefaultLayer()]);
+  const add = () => {
+    const layer = createDefaultLayer();
+    setExpanded((p) => ({ ...p, [layer.id]: true }));
+    onChange([...layers, layer]);
+  };
   const remove = (index: number) => onChange(layers.filter((_, i) => i !== index));
   const move = (index: number, dir: -1 | 1) => {
     const j = index + dir;
@@ -55,10 +65,18 @@ export const LayersEditor: React.FC<Props> = ({ value, onChange }) => {
 
       {layers.length === 0 && <div className={styles.empty}>No layers yet — click “Add layer”.</div>}
 
-      {layers.map((layer, i) => (
+      {layers.map((layer, i) => {
+        const isOpen = expanded[layer.id] ?? false;
+        // One-line summary shown when collapsed: geometry + source layer.
+        const summary = `${layer.geometryType}${layer.sourceLayer ? ` · ${layer.sourceLayer}` : ' · (no source)'}`;
+        return (
         <div key={layer.id} className={styles.card}>
           <div className={styles.header}>
-            <strong>{layer.name || `Layer ${i + 1}`}</strong>
+            <button type="button" className={styles.titleBtn} onClick={() => toggle(layer.id)}>
+              <Icon name={isOpen ? 'angle-down' : 'angle-right'} />
+              <strong>{layer.name || `Layer ${i + 1}`}</strong>
+              {!isOpen && <span className={styles.summary}>{summary}</span>}
+            </button>
             <div className={styles.headerBtns}>
               <Button size="sm" variant="secondary" fill="text" onClick={() => move(i, -1)} title="Move up">
                 ↑
@@ -72,6 +90,8 @@ export const LayersEditor: React.FC<Props> = ({ value, onChange }) => {
             </div>
           </div>
 
+          {isOpen && (
+          <>
           <Field label="Name">
             <Input value={layer.name} onChange={(e) => update(i, { name: e.currentTarget.value })} />
           </Field>
@@ -180,12 +200,18 @@ export const LayersEditor: React.FC<Props> = ({ value, onChange }) => {
               onChange={(e) => update(i, { tooltipExclude: e.currentTarget.value })}
             />
           </Field>
+          <Field label="Tooltip: links">
+            <TooltipLinksEditor value={layer.tooltipLinks ?? []} onChange={(links) => update(i, { tooltipLinks: links })} />
+          </Field>
 
           <Field label="Visible by default">
             <Switch value={layer.visible} onChange={(e) => update(i, { visible: e.currentTarget.checked })} />
           </Field>
+          </>
+          )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
@@ -203,7 +229,29 @@ const getStyles = (theme: GrafanaTheme2) => ({
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing(1),
+    gap: theme.spacing(1),
   }),
-  headerBtns: css({ display: 'flex', gap: theme.spacing(0.5) }),
+  // The clickable title acts as the collapse toggle; reset native button styling.
+  titleBtn: css({
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(0.5),
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+    color: theme.colors.text.primary,
+    textAlign: 'left',
+    flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
+  }),
+  summary: css({
+    color: theme.colors.text.secondary,
+    fontSize: theme.typography.bodySmall.fontSize,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  }),
+  headerBtns: css({ display: 'flex', gap: theme.spacing(0.5), flexShrink: 0 }),
 });

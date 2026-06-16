@@ -7,6 +7,17 @@
 // How a vector tile layer's features are drawn.
 export type GeometryType = 'line' | 'fill' | 'circle';
 
+// A clickable link shown in a feature's tooltip. The `url` is a TEMPLATE: it may
+// contain ${fieldName} placeholders (substituted from the clicked feature's own
+// attributes, URL-encoded) and Grafana template variables like ${__from} or your
+// dashboard variables (substituted by Grafana). Example:
+//   label: "Open in CRM"  url: "https://crm.example.com/cust/${account_id}"
+export interface TooltipLink {
+  label: string;
+  url: string;
+  openInNewTab: boolean;
+}
+
 // Tile Y-axis origin. XYZ = origin top-left (the common web default); TMS =
 // origin bottom-left. GeoServer GWC TMS endpoints serve TMS, and MapLibre
 // fetches the WRONG tiles unless told scheme: 'tms'.
@@ -48,6 +59,7 @@ export interface VectorTileLayerConfig {
   tooltipInclude: string; // case-insensitive regex on field name; '' = all
   tooltipExclude: string; // case-insensitive regex on field name to hide
   tooltipTitleField: string; // field shown as a bold header (optional)
+  tooltipLinks: TooltipLink[]; // templated links shown at the bottom of the tooltip
 }
 
 // One "marker layer" built from the panel's QUERY data (SQL, InfluxDB, …)
@@ -81,6 +93,7 @@ export interface MarkerLayerConfig {
   tooltipInclude: string;
   tooltipExclude: string;
   tooltipTitleField: string;
+  tooltipLinks: TooltipLink[];
 }
 
 export interface VectormapOptions {
@@ -126,6 +139,7 @@ export function createDefaultLayer(): VectorTileLayerConfig {
     tooltipInclude: '',
     tooltipExclude: '',
     tooltipTitleField: '',
+    tooltipLinks: [],
   };
 }
 
@@ -149,5 +163,6 @@ export function createDefaultMarkerLayer(): MarkerLayerConfig {
     tooltipInclude: '',
     tooltipExclude: '',
     tooltipTitleField: '',
+    tooltipLinks: [],
   };
 }
