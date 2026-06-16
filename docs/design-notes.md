@@ -5,10 +5,25 @@ captured so we can pick them up cleanly later. These are NOT yet implemented.
 
 ## Point marker shapes (symbol layers)
 
-**Status:** planned. Today point geometry renders as MapLibre `circle` layers
-(circles only). We want distinct shapes per layer — square, triangle, diamond,
-star, cross, hexagon, etc. — to distinguish handholes / vaults / splice cases,
-and eventually user-uploaded custom shapes (SVG/PNG).
+**Status:** IMPLEMENTED for marker layers (data markers). Each marker layer has a
+`shape` option (circle | square | triangle | diamond | star | cross | hexagon).
+`circle` renders as the native circle layer; the others render as **SDF** symbol
+icons generated in `src/shapeIcons.ts` (a compact TinySDF port). SDF was chosen
+over pre-colored bitmaps specifically so icons stay **data-driven recolorable**
+(`icon-color` = the same per-feature `__color` circles use) and so highlight can
+recolor to cyan + thicken the white halo via feature-state (paint props).
+`icon-size` scales the icon so a marker's diameter matches the equivalent circle.
+
+**Still TODO:**
+- Vector-tile `circle` geometry layers don't yet honor a shape (the icon system
+  is shared, so it's a small addition — gated on need).
+- User-uploaded custom shapes (see below).
+
+Original design thinking (kept for reference):
+
+We wanted distinct shapes per layer — square, triangle, diamond, star, cross,
+hexagon, etc. — to distinguish handholes / vaults / splice cases, and eventually
+user-uploaded custom shapes (SVG/PNG).
 
 **Why it's not trivial:** MapLibre has no shape primitives beyond `circle`. Other
 shapes require `symbol` layers with `icon-image`, and each image must be

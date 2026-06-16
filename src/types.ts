@@ -7,6 +7,10 @@
 // How a vector tile layer's features are drawn.
 export type GeometryType = 'line' | 'fill' | 'circle';
 
+// Point marker shapes. 'circle' renders as a native MapLibre circle layer; the
+// rest render as SDF symbol icons (see shapeIcons.ts). Used by marker layers.
+export type MarkerShape = 'circle' | 'square' | 'triangle' | 'diamond' | 'star' | 'cross' | 'hexagon';
+
 // A clickable link shown in a feature's tooltip. The `url` is a TEMPLATE: it may
 // contain ${fieldName} placeholders (substituted from the clicked feature's own
 // attributes, URL-encoded) and Grafana template variables like ${__from} or your
@@ -80,6 +84,7 @@ export interface MarkerLayerConfig {
   // as two separate, independently styled layers.
   refId: string;
 
+  shape: MarkerShape; // marker shape (circle | square | triangle | …)
   latField: string; // field name; '' = auto-detect by common names (lat/latitude/y)
   lngField: string; // field name; '' = auto-detect (lng/long/longitude/lon/x)
   colorField: string; // field whose standard config drives color; '' = fixed color
@@ -152,6 +157,7 @@ export function createDefaultMarkerLayer(): MarkerLayerConfig {
     group: '',
     visible: true,
     refId: '',
+    shape: 'circle',
     latField: '',
     lngField: '',
     colorField: '',

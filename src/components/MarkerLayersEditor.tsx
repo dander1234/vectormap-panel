@@ -13,8 +13,15 @@ import React, { useState } from 'react';
 import { StandardEditorProps, SelectableValue, GrafanaTheme2, DataFrame } from '@grafana/data';
 import { Button, ColorPicker, Field, Icon, Input, Select, Switch, useStyles2 } from '@grafana/ui';
 import { css } from '@emotion/css';
-import { MarkerLayerConfig, createDefaultMarkerLayer } from '../types';
+import { MarkerLayerConfig, MarkerShape, createDefaultMarkerLayer } from '../types';
+import { MARKER_SHAPES } from '../shapeIcons';
 import { TooltipLinksEditor } from './TooltipLinksEditor';
+
+// Shape dropdown options (label-cased from the shape ids).
+const SHAPE_OPTIONS: Array<SelectableValue<MarkerShape>> = MARKER_SHAPES.map((s) => ({
+  label: s.charAt(0).toUpperCase() + s.slice(1),
+  value: s,
+}));
 
 // Read a number out of a numeric <input>, falling back if blank/NaN.
 const numFrom = (e: React.FormEvent<HTMLInputElement>, fallback: number): number => {
@@ -123,7 +130,7 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
         // One-line summary when collapsed: which query it reads + color-by field.
         // A blank refId means "all queries" — surfaced here so the merge-everything
         // footgun is obvious without expanding the card.
-        const summary = `${layer.refId ? `query ${layer.refId}` : 'ALL queries'}${
+        const summary = `${layer.shape ?? 'circle'} · ${layer.refId ? `query ${layer.refId}` : 'ALL queries'}${
           layer.colorField ? ` · color: ${layer.colorField}` : ''
         }`;
         return (
@@ -181,6 +188,14 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
                 names={names}
                 placeholder="Auto-detect"
                 onChange={(n) => update(i, { lngField: n })}
+              />
+            </Field>
+
+            <Field label="Marker shape" description="Distinguish layers (e.g. square=handhole, triangle=vault, diamond=splice).">
+              <Select
+                options={SHAPE_OPTIONS}
+                value={layer.shape ?? 'circle'}
+                onChange={(v) => update(i, { shape: v.value ?? 'circle' })}
               />
             </Field>
 

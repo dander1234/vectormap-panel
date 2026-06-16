@@ -11,6 +11,7 @@ import { css } from '@emotion/css';
 import maplibregl from 'maplibre-gl';
 import { VectormapOptions, BasemapKind, VectorTileLayerConfig, MarkerLayerConfig, TooltipLink } from '../types';
 import { LayerControl, ControlLayer } from './LayerControl';
+import { ensureShapeIcon, iconIdForShape, SHAPE_ICON_EFFECTIVE } from '../shapeIcons';
 
 // MapLibre's stylesheet (positions canvas + controls). webpack's style-loader
 // injects it at runtime.
@@ -582,25 +583,71 @@ export const VectormapPanel: React.FC<Props> = ({
         const sId = mkSourceIdFor(cfg.id);
         const lId = mkLayerIdFor(cfg.id);
         const fc = buildMarkerFeatures(data?.series ?? [], cfg, theme.visualization.getColorByName);
-        const existing = map.getSource(sId) as maplibregl.GeoJSONSource | undefined;
-        if (existing) {
-          existing.setData(fc);
+
+        // Source: update in place if present, else create. generateId assigns
+        // numeric feature ids so feature-state highlight works.
+        const existingSrc = map.getSource(sId) as maplibregl.GeoJSONSource | undefined;
+        if (existingSrc) {
+          existingSrc.setData(fc);
         } else {
-          // generateId assigns numeric feature ids so feature-state highlight works.
           map.addSource(sId, { type: 'geojson', data: fc, generateId: true });
-          map.addLayer({
-            id: lId,
-            type: 'circle',
-            source: sId,
-            paint: {
-              // Per-feature color/radius come from the GeoJSON properties we computed.
-              'circle-color': whenHighlighted(HIGHLIGHT_COLOR, ['get', '__color']),
-              'circle-radius': whenHighlighted(['+', ['get', '__radius'], 3], ['get', '__radius']),
-              'circle-stroke-width': 1,
-              'circle-stroke-color': '#ffffff',
-            },
-          });
         }
+
+        // Shape decides the draw layer type: 'circle' uses a native circle layer;
+        // any other shape uses an SDF symbol layer (recolorable icon). If the shape
+        // changed between those two families, the existing layer is the wrong type
+        // and must be dropped and re-added (the source/data are kept).
+        const shape = cfg.shape ?? 'circle';
+        const desiredType: 'circle' | 'symbol' = shape === 'circle' ? 'circle' : 'symbol';
+        const existingLayer = map.getLayer(lId);
+        if (existingLayer && existingLayer.type !== desiredType) {
+          map.removeLayer(lId);
+        }
+
+        if (!map.getLayer(lId)) {
+          if (desiredType === 'circle') {
+            map.addLayer({
+              id: lId,
+              type: 'circle',
+              source: sId,
+              paint: {
+                // Per-feature color/radius come from the GeoJSON properties.
+                'circle-color': whenHighlighted(HIGHLIGHT_COLOR, ['get', '__color']),
+                'circle-radius': whenHighlighted(['+', ['get', '__radius'], 3], ['get', '__radius']),
+                'circle-stroke-width': 1,
+                'circle-stroke-color': '#ffffff',
+              },
+            });
+          } else {
+            ensureShapeIcon(map, shape);
+            map.addLayer({
+              id: lId,
+              type: 'symbol',
+              source: sId,
+              layout: {
+                'icon-image': iconIdForShape(shape),
+                // Scale the SDF (drawn at SHAPE_ICON_EFFECTIVE px) so the marker's
+                // diameter (2·__radius) matches what a circle of that radius shows.
+                'icon-size': ['/', ['*', 2, ['get', '__radius']], SHAPE_ICON_EFFECTIVE],
+                // Dense markers: don't let collision detection drop any.
+                'icon-allow-overlap': true,
+                'icon-ignore-placement': true,
+              },
+              paint: {
+                // SDF icons are recolorable: per-feature color, cyan on highlight,
+                // with a white halo standing in for the circle's stroke.
+                'icon-color': whenHighlighted(HIGHLIGHT_COLOR, ['get', '__color']),
+                'icon-halo-color': '#ffffff',
+                'icon-halo-width': whenHighlighted(2.5, 1),
+              },
+            });
+          }
+        } else if (desiredType === 'symbol') {
+          // Same symbol layer, but the shape may have changed to another icon.
+          ensureShapeIcon(map, shape);
+          map.setLayoutProperty(lId, 'icon-image', iconIdForShape(shape));
+        }
+
         // Initial visibility from the live runtime override (ref), else the config.
         const desiredVisible = visibilityRef.current[cfg.id] ?? cfg.visible !== false;
         map.setLayoutProperty(lId, 'visibility', desiredVisible ? 'visible' : 'none');
