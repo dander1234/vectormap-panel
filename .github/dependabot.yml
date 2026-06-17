@@ -14,6 +14,12 @@ updates:
     commit-message:
       prefix: 'chore'
       include: 'scope'
+    ignore:
+      # eslint-plugin-react@7.x is peer-capped at eslint ^9.7, so eslint 10 is
+      # not installable without a forced/broken resolution. Hold eslint at 9
+      # until the plugin ecosystem supports eslint 10, then remove this entry.
+      - dependency-name: 'eslint'
+        versions: ['>=10']
     groups:
       unit-test:
         patterns:
