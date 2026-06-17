@@ -23,7 +23,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: grafana/plugin-actions/build-plugin@build-plugin/v1.0.2
+      - uses: grafana/plugin-actions/build-plugin@build-plugin/v1.2.0
         with:
           # Create a verifiable build provenance attestation (sigstore) so the
           # catalog can confirm the zip was built from this source. Requires the
