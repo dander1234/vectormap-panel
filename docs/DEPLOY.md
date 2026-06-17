@@ -132,6 +132,36 @@ Changes to `plugin.json` require a Grafana restart.
 
 See the [README](../README.md#features) for the full feature list.
 
+### Try it without a backend
+
+You can exercise every feature with no external services:
+
+- **Markers** — add a query on the built-in **TestData** datasource, scenario
+  **CSV Content**, and paste:
+
+  ```
+  lat,lng,name,status
+  37.7749,-122.4194,San Francisco,up
+  34.0522,-118.2437,Los Angeles,down
+  40.7128,-74.0060,New York,up
+  ```
+
+  Add a marker layer with Lat/Lng = `lat`/`lng`, pick a shape, and set a color
+  mode (e.g. a regex rule on `status`). Click a marker for its tooltip.
+
+- **Vector tiles** — add a vector tile layer pointing at MapLibre's public demo
+  tiles (no GeoServer required):
+
+  | Option | Value |
+  | --- | --- |
+  | Tile URL | `https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf` |
+  | Source layer | `countries` |
+  | Geometry type | `fill` |
+  | Tile scheme | `XYZ` |
+
+  Zoom out (this endpoint serves zoom 0–6) — country polygons render from the
+  vector tiles.
+
 ### Serving vector tiles to the browser
 
 The browser fetches tiles directly from the tile URL you configure, so that URL

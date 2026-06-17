@@ -69,6 +69,68 @@ To run the plugin in another Grafana without building it:
 Grafana config, Docker, CORS/tile-server notes, upgrading) are in
 [docs/DEPLOY.md](docs/DEPLOY.md).
 
+## Getting started
+
+Vectormap needs no backend and no external services to try. Add a **Vectormap**
+panel to a dashboard (or open the bundled provisioned **"Vectormap demo"**
+dashboard) — a basemap renders immediately. From there:
+
+### 1. Pick a basemap
+
+In the panel options, set **Basemap** to OpenStreetMap, CARTO light/dark, Esri
+satellite, blank, or a **custom XYZ** raster URL. The map updates live.
+
+### 2. Add markers from query data (works with built-in TestData)
+
+You don't need a real datasource to see markers. Use Grafana's built-in
+**TestData** datasource, scenario **CSV Content**, and paste:
+
+```
+lat,lng,name,status
+37.7749,-122.4194,San Francisco,up
+34.0522,-118.2437,Los Angeles,down
+40.7128,-74.0060,New York,up
+47.6062,-122.3321,Seattle,degraded
+```
+
+Then **Marker layers (from data) → Add marker layer**:
+
+- **Lat/Lng fields** — set to `lat` / `lng`, or leave blank to auto-detect.
+- **Shape** — circle, square, triangle, diamond, star, cross, or hexagon.
+- **Color mode** — fixed, by field (Grafana standard config), or explicit
+  **thresholds** / **regex** rules on a field (e.g. regex on `status`:
+  `down` → red, `up` → green).
+- **Tooltip** — include/exclude fields by regex, set a title field, and add
+  **templated links** such as `https://status.example.com/${name}` that
+  interpolate the clicked feature's values.
+
+Click a marker to open its tooltip.
+
+### 3. Add a vector tile layer (public demo endpoint — no GeoServer needed)
+
+Under **Vector tile layers → Add layer**, use MapLibre's public demo tiles:
+
+| Option | Value |
+| --- | --- |
+| Tile URL | `https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf` |
+| Source layer | `countries` |
+| Geometry type | `fill` |
+| Tile scheme | `XYZ` |
+
+Click **"Set initial view"** while zoomed out (this endpoint serves zoom 0–6)
+and the country polygons render from vector tiles. For a real
+GeoServer GWC / TMS endpoint, set **Tile scheme = TMS** instead. Tile URLs and
+filters accept Grafana **template variables** (e.g. `…/{z}/{x}/{y}.pbf?region=${region}`).
+
+### 4. Use the on-map layer control
+
+Both marker and tile layers appear in the grouped **layer control** (top-right):
+toggle visibility, and assign a **Group** name to related layers to group them
+together.
+
+More detail — including troubleshooting and an FAQ — is on the
+[project wiki](https://github.com/dander1234/vectormap-panel/wiki).
+
 ## Development
 
 Requires Node.js >= 22.
