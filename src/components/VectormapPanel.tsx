@@ -908,7 +908,11 @@ export const VectormapPanel: React.FC<Props> = ({
   }
 
   return (
-    <div className={mapShellClass} style={{ width, height, position: 'relative', overflow: 'hidden' }}>
+    <div
+      data-testid="vectormap-panel"
+      className={mapShellClass}
+      style={{ width, height, position: 'relative', overflow: 'hidden' }}
+    >
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
       <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}>
         <Button
