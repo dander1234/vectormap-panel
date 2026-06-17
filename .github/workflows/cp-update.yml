@@ -10,6 +10,12 @@ on:
 # `pull requests: read and write`
 # `workflows: read and write`
 
+# The action's writes (branch push + PR) use GH_PAT_TOKEN above, so the
+# default GITHUB_TOKEN only needs read access. Least-privilege per
+# actions/missing-workflow-permissions.
+permissions:
+  contents: read
+
 jobs:
   release:
     runs-on: ubuntu-latest
