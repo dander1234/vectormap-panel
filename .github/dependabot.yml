@@ -56,3 +56,8 @@ updates:
     commit-message:
       prefix: 'chore(ci)'
     open-pull-requests-limit: 5
+    ignore:
+      # e2e-version v3.0.0 crashes at module load on the runner. Hold at v2
+      # until a fixed v3.x ships, then remove this entry.
+      - dependency-name: 'grafana/plugin-actions/e2e-version'
+        versions: ['>=3']
