@@ -152,7 +152,7 @@ jobs:
         id: resolve-versions
         # Pinned to v2.0.0: v3.0.0 crashes at module load on the runner
         # (uncaught error in dist/index.js before producing the matrix).
-        uses: grafana/plugin-actions/e2e-version@e2e-version/v2.0.0
+        uses: grafana/plugin-actions/e2e-version@e2e-version/v3.0.1
 
   playwright-tests:
     needs: [resolve-versions, build]
