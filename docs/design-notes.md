@@ -75,10 +75,37 @@ self-hosted `style.json`). The design thinking for when we build it:
    inserted above them (and below labels if we want labels on top) via a
    `beforeId`.
 
-## Area / polygon selection (planned)
+## Area selection (box + lasso)
 
-**Status: NOT yet implemented.** A planned tool to draw a polygon (or
-click-drag box) on the map and return a list of the features inside it across
-**opt-in layers** — e.g. "which customers / ONTs / plant segments fall in this
-area" — rendered into a larger popup or a results panel. Per-layer opt-in so the
-selection can target specific layers. Design to be captured here when we start.
+**Status: IMPLEMENTED.** A "Select area" tool returns a list of the features
+inside a drawn shape, across **opt-in layers** (each layer has a `selectable`
+flag; a layer must also be visible to be queried). Two draw modes share one
+pipeline:
+
+- **Box** — drag a rectangle; queried with `map.queryRenderedFeatures(bbox)`.
+- **Lasso** — freehand polygon; queried by its bounding box, then refined by
+  testing each candidate's projected geometry against the polygon (see
+  `featureInLasso` in `src/selection.ts`).
+
+Key design points:
+
+- **Lines count, not just points.** A feature is selected if any vertex is inside
+  the polygon OR any of its segments crosses a polygon edge — so plant/fiber
+  lines passing through the lasso are caught even with no vertex inside. Points
+  must be inside; fills also count a fully-enclosed lasso.
+- **Rendered-features scope.** Selection uses `queryRenderedFeatures`, so it sees
+  what's drawn at the current zoom/viewport. A future option could do a
+  server-side spatial query (GeoServer WFS / SQL) for completeness regardless of
+  viewport — deferred.
+- **Shared pipeline / seam.** `SelectionGeometry` is a union (`box` | `polygon`);
+  `runSelectionQuery` consumes either and produces grouped, de-duplicated results
+  (vector tiles repeat a feature per covering tile — deduped by id+sourceLayer).
+  The same `selectTooltipFields` helper that builds the click popup picks the
+  columns, so the results match each layer's tooltip config.
+- **Results window.** A floating, draggable, resizable window
+  (`SelectionResults.tsx`) grouped by layer with counts, per-layer cap
+  ("showing N of M"), highlight of selected features (existing `highlighted`
+  feature-state), and Copy / CSV export.
+
+**Deferred:** server-side (WFS/SQL) selection for off-screen completeness; richer
+result styling; persisting the window position across selections.

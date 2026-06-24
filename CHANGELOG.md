@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.0
+
+- Feature: **Select area** tool. Draw a **box** or a freehand **lasso** on the
+  map to list every feature inside it, across the layers you opt in. Lines (plant
+  segments) are included when they cross the lasso, not just when a vertex is
+  inside. Results appear in a **movable, resizable window** grouped by layer, with
+  per-layer counts and **Copy / CSV** export; selected features are highlighted.
+- Each tile and marker layer gains a **Selectable** toggle (default on) so a layer
+  can be included in or excluded from selections independently of visibility.
+
 ## 1.2.2
 
 - Build: enable build provenance attestation in the release workflow

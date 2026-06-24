@@ -59,6 +59,14 @@ export interface VectorTileLayerConfig {
   group: string; // optional group heading in the layer control ('' = ungrouped)
   visible: boolean; // initial visibility
 
+  // Whether this layer takes part in the "Select area" tool. When true (the
+  // default), drawing a box queries this layer's rendered features — but only if
+  // the layer is also currently visible. Turn off to keep a layer on the map yet
+  // out of selections (e.g. a noisy or very dense layer). Read as
+  // `selectable !== false` everywhere so panels saved before this option existed
+  // still default to selectable.
+  selectable: boolean;
+
   tileUrl: string; // MVT/PBF tile template containing {z}/{x}/{y}
   sourceLayer: string; // the layer name INSIDE the tile (not the GeoServer id)
   tileScheme: TileScheme; // 'tms' for GeoServer GWC TMS endpoints
@@ -95,6 +103,10 @@ export interface MarkerLayerConfig {
   name: string; // display name (shown in the layer control)
   group: string; // optional group heading in the layer control ('' = ungrouped)
   visible: boolean; // initial visibility
+
+  // Whether this marker layer takes part in the "Select area" tool (same meaning
+  // as on tile layers — selectable AND visible to be included). Default true.
+  selectable: boolean;
 
   // Which query to read points from, by its refId (the A/B/C letter in the
   // Query tab). '' = read from every returned frame. Binding a marker layer to
@@ -149,6 +161,7 @@ export function createDefaultLayer(): VectorTileLayerConfig {
     name: 'New layer',
     group: '',
     visible: true,
+    selectable: true,
     tileUrl: '',
     sourceLayer: '',
     tileScheme: 'xyz',
@@ -176,6 +189,7 @@ export function createDefaultMarkerLayer(): MarkerLayerConfig {
     name: 'New marker layer',
     group: '',
     visible: true,
+    selectable: true,
     refId: '',
     shape: 'circle',
     latField: '',

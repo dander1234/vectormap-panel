@@ -309,6 +309,16 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
             <Field label="Visible by default">
               <Switch value={layer.visible} onChange={(e) => update(i, { visible: e.currentTarget.checked })} />
             </Field>
+
+            <Field
+              label="Selectable"
+              description="Include this layer in the 'Select area' tool (only counts when the layer is also visible)"
+            >
+              <Switch
+                value={layer.selectable !== false}
+                onChange={(e) => update(i, { selectable: e.currentTarget.checked })}
+              />
+            </Field>
             </>
             )}
           </div>
