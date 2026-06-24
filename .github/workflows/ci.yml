@@ -25,7 +25,7 @@ jobs:
     env:
       GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Setup Node.js environment
@@ -144,15 +144,13 @@ jobs:
       matrix: ${{ steps.resolve-versions.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Resolve Grafana E2E versions
         id: resolve-versions
-        # Pinned to v2.0.0: v3.0.0 crashes at module load on the runner
-        # (uncaught error in dist/index.js before producing the matrix).
-        uses: grafana/plugin-actions/e2e-version@e2e-version/v2.0.0
+        uses: grafana/plugin-actions/e2e-version@e2e-version/v3.0.1
 
   playwright-tests:
     needs: [resolve-versions, build]
@@ -164,7 +162,7 @@ jobs:
     name: e2e test ${{ matrix.GRAFANA_IMAGE.name }}@${{ matrix.GRAFANA_IMAGE.VERSION }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
