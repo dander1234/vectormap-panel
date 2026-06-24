@@ -156,6 +156,12 @@ Then restart Grafana. Changes to frontend code only require a `npm run dev`
 rebuild and a browser refresh; changes to `plugin.json` require a Grafana
 restart.
 
+## Security
+
+To report a vulnerability, or for an explanation of why `npm audit` advisories
+in the externalized Grafana SDK do not ship in the plugin, see
+[SECURITY.md](SECURITY.md).
+
 ## License
 
 Apache-2.0
