@@ -6,7 +6,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { PanelProps, GrafanaTheme2, DataFrame } from '@grafana/data';
-import { Button, useStyles2, useTheme2 } from '@grafana/ui';
+import { Button, RadioButtonGroup, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import maplibregl from 'maplibre-gl';
 import {
@@ -18,8 +18,17 @@ import {
   TooltipLink,
 } from '../types';
 import { LayerControl, ControlLayer, LegendShape } from './LayerControl';
+import { SelectionResults } from './SelectionResults';
 import { ensureShapeIcon, iconIdForShape, SHAPE_ICON_EFFECTIVE } from '../shapeIcons';
 import { MAPLIBRE_CSS } from '../maplibreCss';
+import {
+  selectTooltipFields,
+  runSelectionQuery,
+  SelectionGeometry,
+  SelectionResult,
+  SelectionTarget,
+  FieldFilterConfig,
+} from '../selection';
 
 // MapLibre's stylesheet (positions the canvas, controls, and popups). Grafana
 // plugin code rules forbid importing stylesheet files directly, so instead of a
@@ -149,52 +158,24 @@ const fillUrl = (tpl: string, props: Record<string, unknown>, replaceVariables: 
   return replaceVariables(withFields);
 };
 
-// Compile a user regex, returning null on blank/invalid (so a bad regex never
-// breaks the popup).
-const compileRegex = (src: string): RegExp | null => {
-  if (!src || !src.trim()) {
-    return null;
-  }
-  try {
-    return new RegExp(src, 'i');
-  } catch {
-    return null;
-  }
-};
-
-const isEmptyValue = (v: unknown): boolean => v === null || v === undefined || String(v).trim() === '';
-
 // Build the popup HTML: an optional bold title + a filtered attribute table.
+// Field selection (which attributes show, plus the title) is delegated to the
+// shared selectTooltipFields helper so the click popup and the selection drawer
+// always display the same fields for a given layer.
 const buildPropsTable = (props: Record<string, unknown>, cfg: TooltipRenderConfig): string => {
-  const includeRe = compileRegex(cfg.include);
-  const excludeRe = compileRegex(cfg.exclude);
-
-  let entries = Object.entries(props).filter(([key, value]) => {
-    if (key.startsWith('__')) {
-      return false; // internal props (e.g. __color/__radius on markers)
-    }
-    if (cfg.hideEmpty && isEmptyValue(value)) {
-      return false;
-    }
-    if (includeRe && !includeRe.test(key)) {
-      return false;
-    }
-    if (excludeRe && excludeRe.test(key)) {
-      return false;
-    }
-    return true;
+  const { title, entries } = selectTooltipFields(props, {
+    hideEmpty: cfg.hideEmpty,
+    include: cfg.include,
+    exclude: cfg.exclude,
+    titleField: cfg.titleField,
   });
 
-  let titleHtml = '';
-  if (cfg.titleField) {
-    const titleValue = props[cfg.titleField];
-    if (!isEmptyValue(titleValue)) {
-      titleHtml = `<div style="font-weight:600;font-size:13px;margin-bottom:6px;color:${cfg.titleColor}">${escapeHtml(
-        titleValue
-      )}</div>`;
-      entries = entries.filter(([key]) => key !== cfg.titleField); // don't repeat it below
-    }
-  }
+  const titleHtml =
+    title !== null
+      ? `<div style="font-weight:600;font-size:13px;margin-bottom:6px;color:${cfg.titleColor}">${escapeHtml(
+          title
+        )}</div>`
+      : '';
 
   const rows = entries
     .map(
@@ -429,6 +410,108 @@ export const VectormapPanel: React.FC<Props> = ({
   useEffect(() => {
     visibilityRef.current = visibility;
   }, [visibility]);
+
+  // --- "Select area" tool state -------------------------------------------
+  // `selectMode` is the toolbar toggle (true while the user is in selection
+  // mode). `selectModeRef` mirrors it so the once-bound click/drag handlers
+  // (EFFECT 5/6) can read the live value without rebinding.
+  const [selectMode, setSelectMode] = useState(false);
+  const selectModeRef = useRef(false);
+  useEffect(() => {
+    selectModeRef.current = selectMode;
+  }, [selectMode]);
+  // Which drawing tool the selection uses: 'box' (drag a rectangle) or 'lasso'
+  // (freehand polygon — good for tracing a run of plant). Mirrored in a ref so
+  // the once-bound EFFECT 6 reads the live value.
+  const [selectTool, setSelectTool] = useState<'box' | 'lasso'>('box');
+  const selectToolRef = useRef<'box' | 'lasso'>('box');
+  useEffect(() => {
+    selectToolRef.current = selectTool;
+  }, [selectTool]);
+  // The current selection results shown in the bottom drawer (null = drawer
+  // closed). Populated by runSelection after a box is drawn.
+  const [selection, setSelection] = useState<SelectionResult | null>(null);
+  // The features we've highlighted for the current selection, so we can clear
+  // their feature-state when the drawer closes or a new selection is made.
+  const selectionHighlightRef = useRef<Array<{ source: string; sourceLayer?: string; id: string | number }>>([]);
+
+  // Map a layer config (tile OR marker — both carry the same tooltip fields) to
+  // the field-filter the selection drawer uses for its columns. This is what
+  // makes the drawer reuse each layer's existing tooltip field configuration.
+  const filterOf = (l: VectorTileLayerConfig | MarkerLayerConfig): FieldFilterConfig => ({
+    hideEmpty: l.tooltipHideEmpty ?? true,
+    include: l.tooltipInclude ?? '',
+    exclude: l.tooltipExclude ?? '',
+    titleField: l.tooltipTitleField ?? '',
+  });
+
+  // Turn off the highlight on every feature from the previous selection.
+  const clearSelectionHighlight = () => {
+    const map = mapRef.current;
+    if (map) {
+      for (const t of selectionHighlightRef.current) {
+        map.setFeatureState(t, { highlighted: false });
+      }
+    }
+    selectionHighlightRef.current = [];
+  };
+
+  // Highlight every selected feature that has an id (reusing the existing
+  // feature-state 'highlighted' paint — no paint changes needed). Features
+  // without an id can't be highlighted (documented limitation).
+  const highlightSelected = (result: SelectionResult) => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    clearSelectionHighlight();
+    const next: Array<{ source: string; sourceLayer?: string; id: string | number }> = [];
+    for (const group of result.groups) {
+      for (const f of group.features) {
+        if (f.id === undefined) {
+          continue;
+        }
+        const t: { source: string; sourceLayer?: string; id: string | number } = { source: f.source, id: f.id };
+        if (f.sourceLayer) {
+          t.sourceLayer = f.sourceLayer;
+        }
+        map.setFeatureState(t, { highlighted: true });
+        next.push(t);
+      }
+    }
+    selectionHighlightRef.current = next;
+  };
+
+  // Run a selection for a drawn geometry: gather the layers that are both
+  // selectable AND currently visible, query them, and show the results drawer.
+  // Reads everything from refs so the once-bound EFFECT 6 can call it safely.
+  const runSelection = (geometry: SelectionGeometry) => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    const { layers, markerLayers } = renderRef.current;
+    const isVisible = (id: string, dflt: boolean) => visibilityRef.current[id] ?? dflt;
+
+    const targets: SelectionTarget[] = [];
+    // Tile layers first, then markers — matches draw order / the layer control.
+    for (const l of layers) {
+      if (l.selectable === false || !isVisible(l.id, l.visible !== false) || !map.getLayer(layerIdFor(l.id))) {
+        continue;
+      }
+      targets.push({ mapLayerId: layerIdFor(l.id), layerId: l.id, layerName: l.name, isMarker: false, filter: filterOf(l) });
+    }
+    for (const l of markerLayers) {
+      if (l.selectable === false || !isVisible(l.id, l.visible !== false) || !map.getLayer(mkLayerIdFor(l.id))) {
+        continue;
+      }
+      targets.push({ mapLayerId: mkLayerIdFor(l.id), layerId: l.id, layerName: l.name, isMarker: true, filter: filterOf(l) });
+    }
+
+    const result = runSelectionQuery({ map, geometry, targets, maxPerLayer: 2000 });
+    setSelection(result);
+    highlightSelected(result);
+  };
 
   // EFFECT 1 — create the map exactly once, on mount, with an EMPTY style plus a
   // background layer. The actual basemap is added by EFFECT B so it can be
@@ -769,6 +852,11 @@ export const VectormapPanel: React.FC<Props> = ({
     };
 
     const onClick = (e: maplibregl.MapMouseEvent) => {
+      // While the "Select area" tool is active, a click is part of drawing the
+      // box (handled by EFFECT 6) — don't open the single-feature popup.
+      if (selectModeRef.current) {
+        return;
+      }
       const ids = ourLayerIds();
       clearHighlight();
       popupRef.current?.remove();
@@ -820,6 +908,12 @@ export const VectormapPanel: React.FC<Props> = ({
     };
 
     const onMove = (e: maplibregl.MapMouseEvent) => {
+      // In select mode show a crosshair and skip the hover hit-test (the box
+      // overlay owns the interaction).
+      if (selectModeRef.current) {
+        map.getCanvas().style.cursor = 'crosshair';
+        return;
+      }
       const ids = ourLayerIds();
       const hit = ids.length > 0 && map.queryRenderedFeatures(e.point, { layers: ids }).length > 0;
       map.getCanvas().style.cursor = hit ? 'pointer' : '';
@@ -833,6 +927,134 @@ export const VectormapPanel: React.FC<Props> = ({
       popupRef.current?.remove();
       popupRef.current = null;
     };
+  }, []);
+
+  // EFFECT 6 — the "Select area" drawing tool (box OR lasso). Bound once (like
+  // EFFECT 5); it reads live state via selectModeRef/selectToolRef + renderRef.
+  // We attach native DOM listeners (rather than MapLibre's) so we get pixel
+  // coordinates and full control, and draw the live shape into an SVG overlay.
+  useEffect(() => {
+    const map = mapRef.current;
+    const container = containerRef.current;
+    if (!map || !container) {
+      return;
+    }
+
+    // One SVG overlay drives both tools: a <polygon> that we feed 4 corners for a
+    // box, or the accumulated freehand points for a lasso. It's drawn imperatively
+    // (not via React) because a drag fires far faster than React state updates.
+    const SVGNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;display:none';
+    const shape = document.createElementNS(SVGNS, 'polygon');
+    shape.setAttribute('fill', 'rgba(0,229,255,0.12)');
+    shape.setAttribute('stroke', HIGHLIGHT_COLOR);
+    shape.setAttribute('stroke-width', '1.5');
+    shape.setAttribute('stroke-dasharray', '5 3');
+    svg.appendChild(shape);
+    container.appendChild(svg);
+
+    let dragging = false;
+    let mode: 'box' | 'lasso' = 'box';
+    let start: [number, number] | null = null; // box: the first corner (canvas px)
+    let pts: Array<[number, number]> = []; // lasso: the freehand points (canvas px)
+    const TINY = 4; // px — a box drag smaller than this is treated as a stray click
+    const MIN_STEP = 3; // px — minimum spacing between recorded lasso points
+
+    // Re-enable the map's own drag handlers (called on release/cleanup).
+    const enableMapDrag = () => {
+      map.dragPan.enable();
+      map.boxZoom.enable();
+      map.dragRotate.enable();
+    };
+
+    // Pointer position in map-canvas pixels (origin = canvas top-left). The SVG
+    // overlay shares this origin (it fills the same container), so these same
+    // coordinates drive both the drawn shape and the feature query.
+    const localPoint = (ev: MouseEvent): [number, number] => {
+      const r = map.getCanvas().getBoundingClientRect();
+      return [ev.clientX - r.left, ev.clientY - r.top];
+    };
+    const setPolygon = (arr: Array<[number, number]>) =>
+      shape.setAttribute('points', arr.map((p) => `${p[0]},${p[1]}`).join(' '));
+
+    const onDown = (ev: MouseEvent) => {
+      if (!selectModeRef.current || ev.button !== 0) {
+        return; // only left-button drags while the tool is active
+      }
+      dragging = true;
+      mode = selectToolRef.current;
+      map.dragPan.disable();
+      map.boxZoom.disable();
+      map.dragRotate.disable();
+      const p = localPoint(ev);
+      if (mode === 'box') {
+        start = p;
+        setPolygon([p, p, p, p]);
+      } else {
+        pts = [p];
+        setPolygon(pts);
+      }
+      svg.style.display = 'block';
+      ev.preventDefault();
+    };
+
+    const onMoveDoc = (ev: MouseEvent) => {
+      if (!dragging) {
+        return;
+      }
+      const p = localPoint(ev);
+      if (mode === 'box' && start) {
+        // A rectangle expressed as its four corners.
+        setPolygon([[start[0], start[1]], [p[0], start[1]], [p[0], p[1]], [start[0], p[1]]]);
+      } else if (mode === 'lasso') {
+        const last = pts[pts.length - 1];
+        if (!last || Math.abs(p[0] - last[0]) + Math.abs(p[1] - last[1]) >= MIN_STEP) {
+          pts.push(p);
+          setPolygon(pts);
+        }
+      }
+    };
+
+    const onUp = (ev: MouseEvent) => {
+      if (!dragging) {
+        return;
+      }
+      dragging = false;
+      enableMapDrag();
+      svg.style.display = 'none';
+      const p = localPoint(ev);
+      if (mode === 'box' && start) {
+        const s = start;
+        start = null;
+        if (Math.abs(p[0] - s[0]) < TINY && Math.abs(p[1] - s[1]) < TINY) {
+          return; // tiny drag — treat as a stray click, select nothing
+        }
+        runSelection({ kind: 'box', p1: s, p2: p });
+      } else if (mode === 'lasso') {
+        const poly = pts;
+        pts = [];
+        if (poly.length >= 3) {
+          runSelection({ kind: 'polygon', points: poly });
+        }
+      }
+    };
+
+    container.addEventListener('mousedown', onDown);
+    // Listen on window for move/up so a drag that leaves the panel still finishes.
+    window.addEventListener('mousemove', onMoveDoc);
+    window.addEventListener('mouseup', onUp);
+
+    return () => {
+      container.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMoveDoc);
+      window.removeEventListener('mouseup', onUp);
+      svg.remove();
+      if (dragging) {
+        enableMapDrag(); // safety: unmounted mid-drag
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Toggle a layer's visibility from the LayerControl: update state + flip the
@@ -914,7 +1136,7 @@ export const VectormapPanel: React.FC<Props> = ({
       style={{ width, height, position: 'relative', overflow: 'hidden' }}
     >
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
-      <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}>
+      <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 1, display: 'flex', gap: 8 }}>
         <Button
           size="sm"
           variant="secondary"
@@ -923,8 +1145,51 @@ export const VectormapPanel: React.FC<Props> = ({
         >
           Set initial view
         </Button>
+        <Button
+          size="sm"
+          variant={selectMode ? 'primary' : 'secondary'}
+          icon="gf-show-context"
+          onClick={() => {
+            // Entering select mode: close any open single-feature popup so the two
+            // interactions don't visually conflict.
+            if (!selectMode) {
+              popupRef.current?.remove();
+              popupRef.current = null;
+            }
+            setSelectMode((m) => !m);
+          }}
+          title="Draw a shape on the map to list the features inside it"
+        >
+          {selectMode ? 'Selecting…' : 'Select area'}
+        </Button>
+        {selectMode && (
+          // Choose the drawing tool: a rectangle (Box) or a freehand outline
+          // (Lasso) for tracing an irregular run of plant.
+          <RadioButtonGroup<'box' | 'lasso'>
+            size="sm"
+            value={selectTool}
+            onChange={(v) => setSelectTool(v)}
+            options={[
+              { label: 'Box', value: 'box', description: 'Drag a rectangle' },
+              { label: 'Lasso', value: 'lasso', description: 'Draw a freehand outline' },
+            ]}
+          />
+        )}
       </div>
       <LayerControl layers={controlLayers} visibility={effectiveVisibility} onToggle={handleToggle} />
+      {selection && (
+        <SelectionResults
+          result={selection}
+          // The results window floats over the map and clamps itself to the panel,
+          // so it needs the panel size for its initial placement and bounds.
+          width={width}
+          height={height}
+          onClose={() => {
+            setSelection(null);
+            clearSelectionHighlight();
+          }}
+        />
+      )}
     </div>
   );
 };

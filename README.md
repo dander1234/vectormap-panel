@@ -25,6 +25,10 @@ loads the tiles in view at the current zoom.
   **thresholds** / **regex** rules defined right on the layer.
 - **Unified on-map layer control** — show/hide and group both tile and marker
   layers from one box.
+- **Select area** — draw a **box** or freehand **lasso** to list every feature
+  inside it (lines/plant segments included when they cross the lasso, not just
+  points), across the layers you opt in per layer. Results show in a movable,
+  resizable window grouped by layer, with per-layer counts and **CSV export**.
 - **Per-layer tooltips** — include/exclude fields by regex, hide empty values, a
   title field, and **templated links** (`${field}` placeholders from the clicked
   feature plus Grafana dashboard variables).
@@ -127,6 +131,23 @@ filters accept Grafana **template variables** (e.g. `…/{z}/{x}/{y}.pbf?region=
 Both marker and tile layers appear in the grouped **layer control** (top-right):
 toggle visibility, and assign a **Group** name to related layers to group them
 together.
+
+### 5. Select an area
+
+Click **Select area** (top-left), then choose **Box** or **Lasso**:
+
+- **Box** — drag a rectangle.
+- **Lasso** — hold and trace a freehand outline; release to close it.
+
+Everything inside is listed in a movable, resizable **results window**, grouped
+by layer with counts. Lines (e.g. plant segments) are included when they cross
+the lasso, not only when a vertex is inside. Use **Copy** / **CSV** to export the
+list (e.g. affected customers or plant). Each layer has a **Selectable** toggle in
+its options, so you can include some layers and exclude others; a layer must also
+be **visible** to be selected.
+
+> Selection captures the features **rendered at the current zoom and position**
+> inside the shape — zoom to the area first for completeness.
 
 More detail — including troubleshooting and an FAQ — is on the
 [project wiki](https://github.com/dander1234/vectormap-panel/wiki).
