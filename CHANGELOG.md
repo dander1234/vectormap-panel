@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0
+
+- Feature: the search box can now look up **account ID** and **equipment ID** in
+  addition to address. Each marker layer gains **Account ID field** and
+  **Equipment ID field** mappings (numeric); a query is matched against whichever
+  of address/account/equipment a layer has set, and the dropdown tags each hit by
+  which field matched. Picking a result flies to and pins the existing point, as
+  with address search.
+
 ## 1.4.0
 
 - Feature: **address search box**. Jump the map to an address — matching local
