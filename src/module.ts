@@ -12,6 +12,7 @@ import { MarkerLayersEditor } from './components/MarkerLayersEditor';
 
 const VIEW = ['Map view'];
 const BASEMAP = ['Basemap'];
+const SEARCH = ['Address search'];
 
 export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanelOptions((builder) => {
   return (
@@ -66,6 +67,38 @@ export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanel
         defaultValue: '',
         category: BASEMAP,
         showIf: (opts) => opts.basemap === 'custom',
+      })
+      // --- Address search ---
+      .addBooleanSwitch({
+        path: 'searchEnabled',
+        name: 'Show address search box',
+        description: 'A box to jump the map to an address — matching query data first, then a geocoder.',
+        defaultValue: true,
+        category: SEARCH,
+      })
+      .addSelect({
+        path: 'geocoder',
+        name: 'Geocoder',
+        description: 'External lookup used when an address is not found in the query data.',
+        defaultValue: 'nominatim',
+        settings: {
+          options: [
+            { value: 'nominatim', label: 'Nominatim (OpenStreetMap)' },
+            { value: 'custom', label: 'Custom endpoint' },
+            { value: 'none', label: 'None (local data only)' },
+          ],
+        },
+        category: SEARCH,
+        showIf: (opts) => opts.searchEnabled !== false,
+      })
+      .addTextInput({
+        path: 'geocoderUrl',
+        name: 'Custom geocoder URL',
+        description:
+          'URL template containing {query}. May include ${var} dashboard variables (e.g. an API key — note dashboard JSON is not secret). Should return a GeoJSON FeatureCollection or a Nominatim-style array.',
+        defaultValue: '',
+        category: SEARCH,
+        showIf: (opts) => opts.searchEnabled !== false && opts.geocoder === 'custom',
       })
       // --- Marker layers (from query data) ---
       // Markers built from SQL/InfluxDB/… results. Like the tile layers, this is

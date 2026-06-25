@@ -32,6 +32,10 @@ loads the tiles in view at the current zoom.
 - **Per-layer tooltips** — include/exclude fields by regex, hide empty values, a
   title field, and **templated links** (`${field}` placeholders from the clicked
   feature plus Grafana dashboard variables).
+- **Address search** — jump to an address, matching local query data first (a
+  marker layer's address field, e.g. an ONT's street address) and falling back to
+  a geocoder on demand (Nominatim by default, or a custom endpoint). Flies there,
+  drops a pin, and opens a popup.
 - **Basemaps** — OpenStreetMap, CARTO light/dark, Esri satellite, blank, or a
   custom XYZ raster URL.
 - **"Set initial view"** button to capture the current center/zoom into options.
@@ -148,6 +152,23 @@ be **visible** to be selected.
 
 > Selection captures the features **rendered at the current zoom and position**
 > inside the shape — zoom to the area first for completeness.
+
+### 6. Search for an address
+
+Use the search box (top-center). As you type, matching rows from your query data
+appear under **From data** — these come from any marker layer whose **Address
+field** is set (in that layer's options). Pick one and the map flies to it, drops
+a pin, and shows the feature's attributes.
+
+Press **Enter** or **Search web** to look the address up with the external
+**geocoder** (configured under *Address search* in panel options). The **✕**
+clears the result.
+
+> The default geocoder is **Nominatim** (OpenStreetMap) — free, but rate-limited
+> (~1 request/second) and subject to the [OSM usage policy](https://operations.osmfoundation.org/policies/nominatim/);
+> please keep OpenStreetMap attribution. For heavier use, set *Geocoder = Custom*
+> and point it at your own or a commercial provider. Set *Geocoder = None* to
+> search only your query data.
 
 More detail — including troubleshooting and an FAQ — is on the
 [project wiki](https://github.com/dander1234/vectormap-panel/wiki).

@@ -200,6 +200,18 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
               />
             </Field>
 
+            <Field
+              label="Address field"
+              description="Field the address search box matches against (e.g. street address). Blank = exclude this layer from local search."
+            >
+              <FieldSelect
+                value={layer.addressField ?? ''}
+                names={names}
+                placeholder="None"
+                onChange={(n) => update(i, { addressField: n })}
+              />
+            </Field>
+
             <Field label="Marker shape" description="Distinguish layers (e.g. square=handhole, triangle=vault, diamond=splice).">
               <Select
                 options={SHAPE_OPTIONS}
