@@ -15,6 +15,8 @@ import { GrafanaTheme2 } from '@grafana/data';
 import { Button, IconButton, Icon, useStyles2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import { SelectionResult, SelectedLayerGroup, selectTooltipFields, selectionToCsv } from '../selection';
+import { TooltipLink } from '../types';
+import { linkPlaceholderFields, resolveLink } from '../links';
 
 interface Props {
   result: SelectionResult;
@@ -24,6 +26,8 @@ interface Props {
   // leaves the panel.
   width: number;
   height: number;
+  // Grafana variable interpolation, applied when filling a layer's link URLs.
+  replaceVariables: (s: string) => string;
 }
 
 // The window's position + size in pixels, relative to the panel's top-left.
@@ -58,16 +62,27 @@ interface DragState {
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-// Per-group display model: ordered columns + one row of values per feature.
+// Per-group display model: ordered columns + one row of values per feature, plus
+// the resolved link mapping (which column becomes a clickable cell vs. which
+// links go in the trailing "Links" column).
 interface GroupView {
   group: SelectedLayerGroup;
   titleHeader: string | null;
   keys: string[];
-  rows: Array<{ title: string | null; byKey: Map<string, unknown> }>;
+  // Each row keeps its full props so link URLs can reference any field, not just
+  // the shown columns.
+  rows: Array<{ title: string | null; byKey: Map<string, unknown>; props: Record<string, unknown> }>;
+  // Column name -> link: a link whose URL references exactly one field that IS a
+  // shown column; that column's value renders as the clickable link.
+  cellLinks: Map<string, TooltipLink>;
+  // Links that don't map to a single shown column — rendered in a "Links" column
+  // as labeled links so nothing configured is lost.
+  extraLinks: TooltipLink[];
 }
 
 // Build the table model for one layer group by running each feature's properties
-// through the shared field filter and unioning the keys (so sparse rows align).
+// through the shared field filter and unioning the keys (so sparse rows align),
+// then partitioning the layer's links into per-cell links vs. extra labeled links.
 const buildGroupView = (group: SelectedLayerGroup): GroupView => {
   const keys: string[] = [];
   const seen = new Set<string>();
@@ -83,13 +98,57 @@ const buildGroupView = (group: SelectedLayerGroup): GroupView => {
         keys.push(k);
       }
     }
-    return { title, byKey: new Map(entries) };
+    return { title, byKey: new Map(entries), props: f.props };
   });
-  return { group, titleHeader: usesTitle ? group.filter.titleField || 'title' : null, keys, rows };
+  const titleHeader = usesTitle ? group.filter.titleField || 'title' : null;
+
+  // The set of shown column names (the title field plus the attribute keys).
+  const columns = new Set<string>(keys);
+  if (titleHeader && group.filter.titleField) {
+    columns.add(group.filter.titleField);
+  }
+
+  // Partition the layer's links: a link with exactly one ${field} placeholder
+  // that matches a shown column becomes that column's cell link; the rest become
+  // labeled links in a trailing column.
+  const cellLinks = new Map<string, TooltipLink>();
+  const extraLinks: TooltipLink[] = [];
+  for (const link of group.links ?? []) {
+    const fields = linkPlaceholderFields(link.url);
+    if (fields.length === 1 && columns.has(fields[0]) && !cellLinks.has(fields[0])) {
+      cellLinks.set(fields[0], link);
+    } else {
+      extraLinks.push(link);
+    }
+  }
+  return { group, titleHeader, keys, rows, cellLinks, extraLinks };
 };
 
-export const SelectionResults: React.FC<Props> = ({ result, onClose, width, height }) => {
+export const SelectionResults: React.FC<Props> = ({ result, onClose, width, height, replaceVariables }) => {
   const styles = useStyles2(getStyles);
+
+  // Render a table cell's value, as a link when a configured link maps to that
+  // column (else plain text). The link text is the cell value (e.g. an
+  // equipment id), and the URL is the layer's link filled from the row.
+  const cellContent = (value: unknown, link: TooltipLink | undefined, props: Record<string, unknown>) => {
+    if (!link) {
+      return fmt(value);
+    }
+    const r = resolveLink(link, props, replaceVariables);
+    if (!r) {
+      return fmt(value);
+    }
+    return (
+      <a
+        className={styles.link}
+        href={r.href}
+        target={r.openInNewTab ? '_blank' : undefined}
+        rel={r.openInNewTab ? 'noopener noreferrer' : undefined}
+      >
+        {fmt(value)}
+      </a>
+    );
+  };
 
   // Initial window: a wide, half-height box docked near the bottom-left, but free
   // to be moved/resized from there. Computed once from the panel size.
@@ -268,15 +327,44 @@ export const SelectionResults: React.FC<Props> = ({ result, onClose, width, heig
                           {view.keys.map((k) => (
                             <th key={k}>{k}</th>
                           ))}
+                          {view.extraLinks.length > 0 && <th>Links</th>}
                         </tr>
                       </thead>
                       <tbody>
                         {view.rows.map((row, idx) => (
                           <tr key={idx}>
-                            {view.titleHeader && <td>{fmt(row.title)}</td>}
+                            {view.titleHeader && (
+                              <td>
+                                {cellContent(
+                                  row.title,
+                                  g.filter.titleField ? view.cellLinks.get(g.filter.titleField) : undefined,
+                                  row.props
+                                )}
+                              </td>
+                            )}
                             {view.keys.map((k) => (
-                              <td key={k}>{fmt(row.byKey.get(k))}</td>
+                              <td key={k}>{cellContent(row.byKey.get(k), view.cellLinks.get(k), row.props)}</td>
                             ))}
+                            {view.extraLinks.length > 0 && (
+                              <td>
+                                <div className={styles.linkList}>
+                                  {view.extraLinks.map((link, li) => {
+                                    const r = resolveLink(link, row.props, replaceVariables);
+                                    return r ? (
+                                      <a
+                                        key={li}
+                                        className={styles.link}
+                                        href={r.href}
+                                        target={r.openInNewTab ? '_blank' : undefined}
+                                        rel={r.openInNewTab ? 'noopener noreferrer' : undefined}
+                                      >
+                                        {r.label}
+                                      </a>
+                                    ) : null;
+                                  })}
+                                </div>
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -352,6 +440,8 @@ const getStyles = (theme: GrafanaTheme2) => {
     }),
     groupName: css({ fontWeight: theme.typography.fontWeightMedium }),
     count: css({ color: theme.colors.text.secondary, marginLeft: 'auto' }),
+    link: css({ color: theme.colors.text.link, textDecoration: 'underline', cursor: 'pointer' }),
+    linkList: css({ display: 'flex', flexWrap: 'wrap', gap: theme.spacing(0, 1) }),
     tableWrap: css({
       overflow: 'auto',
       maxHeight: 240,

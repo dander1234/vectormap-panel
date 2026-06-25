@@ -150,6 +150,10 @@ list (e.g. affected customers or plant). Each layer has a **Selectable** toggle 
 its options, so you can include some layers and exclude others; a layer must also
 be **visible** to be selected.
 
+The results table honors each layer's configured **tooltip links**: a link whose
+URL references a single field (e.g. `…/equip/${equipment_id}`) makes that
+column's values clickable; other links appear in a trailing **Links** column.
+
 > Selection captures the features **rendered at the current zoom and position**
 > inside the shape — zoom to the area first for completeness.
 

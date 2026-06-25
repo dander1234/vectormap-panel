@@ -62,6 +62,7 @@ describe('runSelectionQuery', () => {
     layerName: 'Plant',
     isMarker: false,
     filter: filter(),
+    links: [],
   };
   const box = { kind: 'box' as const, p1: [0, 0] as [number, number], p2: [10, 10] as [number, number] };
 
@@ -113,6 +114,7 @@ describe('runSelectionQuery — lasso (polygon)', () => {
     layerName: 'Plant',
     isMarker: false,
     filter: filter(),
+    links: [],
   };
   // A 10x10 square lasso at the origin.
   const lasso = {
@@ -184,6 +186,7 @@ describe('selectionToCsv', () => {
         layerName: 'Plant',
         isMarker: false,
         filter: filter({ titleField: 'name' }),
+        links: [],
         totalBeforeCap: 2,
         features: [
           { dedupeKey: '1', source: 's', props: { name: 'A, Inc', status: 'up' } },

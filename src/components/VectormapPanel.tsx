@@ -32,6 +32,7 @@ import {
   SelectionTarget,
   FieldFilterConfig,
 } from '../selection';
+import { fillUrl, sanitizeUrl } from '../links';
 
 // MapLibre's stylesheet (positions the canvas, controls, and popups). Grafana
 // plugin code rules forbid importing stylesheet files directly, so instead of a
@@ -146,25 +147,6 @@ interface TooltipRenderConfig {
   mutedColor: string;
   linkColor: string;
 }
-
-// Reject dangerous URL schemes; allow http(s), mailto, tel, and relative URLs.
-const sanitizeUrl = (url: string): string | null => {
-  const u = url.trim();
-  if (!u || /^\s*(javascript|data|vbscript):/i.test(u)) {
-    return null;
-  }
-  return u;
-};
-
-// Build a link URL from its template: first substitute ${field} placeholders
-// from the clicked feature's own attributes (URL-encoded), then run Grafana's
-// variable interpolation for any remaining ${var} (dashboard variables).
-const fillUrl = (tpl: string, props: Record<string, unknown>, replaceVariables: (s: string) => string): string => {
-  const withFields = tpl.replace(/\$\{([\w.]+)\}/g, (m, key) =>
-    Object.prototype.hasOwnProperty.call(props, key) ? encodeURIComponent(String(props[key] ?? '')) : m
-  );
-  return replaceVariables(withFields);
-};
 
 // Build the popup HTML: an optional bold title + a filtered attribute table.
 // Field selection (which attributes show, plus the title) is delegated to the
@@ -507,13 +489,27 @@ export const VectormapPanel: React.FC<Props> = ({
       if (l.selectable === false || !isVisible(l.id, l.visible !== false) || !map.getLayer(layerIdFor(l.id))) {
         continue;
       }
-      targets.push({ mapLayerId: layerIdFor(l.id), layerId: l.id, layerName: l.name, isMarker: false, filter: filterOf(l) });
+      targets.push({
+        mapLayerId: layerIdFor(l.id),
+        layerId: l.id,
+        layerName: l.name,
+        isMarker: false,
+        filter: filterOf(l),
+        links: l.tooltipLinks ?? [],
+      });
     }
     for (const l of markerLayers) {
       if (l.selectable === false || !isVisible(l.id, l.visible !== false) || !map.getLayer(mkLayerIdFor(l.id))) {
         continue;
       }
-      targets.push({ mapLayerId: mkLayerIdFor(l.id), layerId: l.id, layerName: l.name, isMarker: true, filter: filterOf(l) });
+      targets.push({
+        mapLayerId: mkLayerIdFor(l.id),
+        layerId: l.id,
+        layerName: l.name,
+        isMarker: true,
+        filter: filterOf(l),
+        links: l.tooltipLinks ?? [],
+      });
     }
 
     const result = runSelectionQuery({ map, geometry, targets, maxPerLayer: 2000 });
@@ -1308,6 +1304,7 @@ export const VectormapPanel: React.FC<Props> = ({
           // so it needs the panel size for its initial placement and bounds.
           width={width}
           height={height}
+          replaceVariables={replaceVariables}
           onClose={() => {
             setSelection(null);
             clearSelectionHighlight();
