@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.0
+
+- Feature: the **Select area** results table now honors each layer's configured
+  tooltip links. A link whose URL references a single field (e.g.
+  `…/equip/${equipment_id}`) turns that column's values into clickable links;
+  links referencing multiple/zero fields appear in a trailing **Links** column as
+  labeled links. Respects `openInNewTab` and dashboard-variable interpolation.
+
 ## 1.5.0
 
 - Feature: the search box can now look up **account ID** and **equipment ID** in

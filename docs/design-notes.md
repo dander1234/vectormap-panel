@@ -106,6 +106,12 @@ Key design points:
   (`SelectionResults.tsx`) grouped by layer with counts, per-layer cap
   ("showing N of M"), highlight of selected features (existing `highlighted`
   feature-state), and Copy / CSV export.
+- **Links in the table.** Each layer's `tooltipLinks` are rendered in the results
+  table. A link whose URL has exactly one `${field}` placeholder matching a shown
+  column turns that column's cell values into links; links referencing
+  multiple/zero fields go in a trailing "Links" column. The URL fill/sanitize
+  helpers live in `src/links.ts` and are shared with the click popup
+  (`buildPropsTable`) so both render links identically.
 
 **Deferred:** server-side (WFS/SQL) selection for off-screen completeness; richer
 result styling; persisting the window position across selections.

@@ -16,6 +16,7 @@
 
 // We only need MapLibre's *types* here (not the runtime), so import the type.
 import type maplibregl from 'maplibre-gl';
+import { TooltipLink } from './types';
 
 // ---------------------------------------------------------------------------
 // Shared field helpers (moved out of VectormapPanel so popup + drawer share them)
@@ -123,6 +124,7 @@ export interface SelectedLayerGroup {
   layerName: string;
   isMarker: boolean;
   filter: FieldFilterConfig; // this layer's field filter (drives the table columns)
+  links: TooltipLink[]; // this layer's templated links (rendered in the results table)
   features: SelectedFeature[]; // capped to maxPerLayer
   totalBeforeCap: number; // how many matched before the cap (for "showing N of M")
 }
@@ -142,6 +144,7 @@ export interface SelectionTarget {
   layerName: string;
   isMarker: boolean;
   filter: FieldFilterConfig;
+  links: TooltipLink[];
 }
 
 export interface QueryParams {
@@ -361,6 +364,7 @@ export const runSelectionQuery = (params: QueryParams): SelectionResult => {
       layerName: t.layerName,
       isMarker: t.isMarker,
       filter: t.filter,
+      links: t.links,
       features: bucket.features,
       totalBeforeCap: bucket.total,
     });
