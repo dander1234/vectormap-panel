@@ -4,6 +4,8 @@
 // shape here must stay in sync with what module.ts registers (Grafana builds
 // the edit UI from module.ts; TypeScript checks the component against these).
 
+import { GeocoderKind } from './geocode';
+
 // How a vector tile layer's features are drawn.
 export type GeometryType = 'line' | 'fill' | 'circle';
 
@@ -115,6 +117,9 @@ export interface MarkerLayerConfig {
   refId: string;
 
   shape: MarkerShape; // marker shape (circle | square | triangle | …)
+  // Field searched by the address search box (e.g. an ONT's street address).
+  // '' = this layer doesn't take part in local address search.
+  addressField: string;
   latField: string; // field name; '' = auto-detect by common names (lat/latitude/y)
   lngField: string; // field name; '' = auto-detect (lng/long/longitude/lon/x)
   colorMode: MarkerColorMode; // how color is decided (fixed | field | thresholds | regex)
@@ -149,6 +154,13 @@ export interface VectormapOptions {
   // Marker layers built from query data (SQL/InfluxDB/…). Drawn above the tile
   // layers; each appears in the layer control alongside them.
   markerLayers: MarkerLayerConfig[];
+
+  // Address search box. When enabled, a search box lets the user jump to an
+  // address — matching local query data first (per a layer's addressField) and
+  // falling back to the external geocoder on demand.
+  searchEnabled: boolean;
+  geocoder: GeocoderKind; // 'nominatim' | 'custom' | 'none' (local-only)
+  geocoderUrl: string; // custom endpoint template with {query}; used when geocoder==='custom'
 }
 
 // Factory for a fresh layer with sensible defaults and a unique id. Used both by
@@ -192,6 +204,7 @@ export function createDefaultMarkerLayer(): MarkerLayerConfig {
     selectable: true,
     refId: '',
     shape: 'circle',
+    addressField: '',
     latField: '',
     lngField: '',
     colorMode: 'field',

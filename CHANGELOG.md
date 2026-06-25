@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0
+
+- Feature: **address search box**. Jump the map to an address — matching local
+  query data first (set a marker layer's **Address field**, e.g. an ONT's street
+  address) and falling back to an external **geocoder** on demand. Picking a
+  result flies there, drops a pin, and opens a popup (local hits show the
+  feature's attributes). Geocoder is configurable: **Nominatim** (OpenStreetMap,
+  default), a **custom endpoint** (URL template, GeoJSON or Nominatim-style), or
+  **None** (local-only).
+
 ## 1.3.0
 
 - Feature: **Select area** tool. Draw a **box** or a freehand **lasso** on the

@@ -109,3 +109,27 @@ Key design points:
 
 **Deferred:** server-side (WFS/SQL) selection for off-screen completeness; richer
 result styling; persisting the window position across selections.
+
+## Address search (local-first + geocoder)
+
+**Status: IMPLEMENTED.** A search box jumps the map to an address. It searches
+**local query data first**, then an external geocoder **on demand**.
+
+- **Local search** (`src/search.ts`, `localAddressSearch`): matches the query
+  (case-insensitive substring) against each marker layer's configured
+  `addressField`, reading the same data frames the markers are built from
+  (respecting each layer's `refId`). Instant/in-memory, so it runs as you type.
+- **External geocoder** (`src/geocode.ts`): only called on an explicit action
+  (Enter / "Search web") to respect provider rate limits. Default is **Nominatim**
+  (OpenStreetMap, no key — keep volume low + attribute OSM). A **custom** endpoint
+  is a URL template with `{query}` (and `${var}` interpolation for keys); the
+  tolerant `parseGeocodeResults` accepts a GeoJSON FeatureCollection or a
+  Nominatim-style array. **None** disables web lookups. Google was rejected: paid,
+  and its ToS forbids showing its geocoding results on a non-Google basemap.
+- **Pick → fly + pin + popup** (`handlePick` in VectormapPanel): `flyTo`
+  (or `fitBounds` for a result bbox), a `search-pin` GeoJSON ring layer, and a
+  popup — local hits reuse `buildPropsTable` with that layer's tooltip config; web
+  hits show the geocoded label. The box's ✕ clears the pin/popup.
+
+**Deferred:** geocoder typeahead/autocomplete; reverse geocoding (click → address);
+searching vector-tile rendered features; persisting the last search.

@@ -19,6 +19,9 @@ import {
 } from '../types';
 import { LayerControl, ControlLayer, LegendShape } from './LayerControl';
 import { SelectionResults } from './SelectionResults';
+import { SearchBox } from './SearchBox';
+import { geocode, GeocodeResult } from '../geocode';
+import { localAddressSearch, SearchHit } from '../search';
 import { ensureShapeIcon, iconIdForShape, SHAPE_ICON_EFFECTIVE } from '../shapeIcons';
 import { MAPLIBRE_CSS } from '../maplibreCss';
 import {
@@ -64,6 +67,11 @@ const LNG_NAMES = ['longitude', 'long', 'lng', 'lon', 'x'];
 
 // Color used to draw a clicked/selected feature.
 const HIGHLIGHT_COLOR = '#00e5ff';
+
+// The address-search result marker (a single GeoJSON point + ring layer kept on
+// top of everything).
+const SEARCH_PIN_SOURCE = 'search-pin';
+const SEARCH_PIN_LAYER = 'search-pin';
 
 // Paint expression: highlight value when the feature is selected, else normal.
 // Returns `any` to sidestep MapLibre's strict expression typing.
@@ -511,6 +519,113 @@ export const VectormapPanel: React.FC<Props> = ({
     const result = runSelectionQuery({ map, geometry, targets, maxPerLayer: 2000 });
     setSelection(result);
     highlightSelected(result);
+  };
+
+  // --- Address search -------------------------------------------------------
+  // Local search: match the query against marker layers' address fields, reading
+  // the same data frames the markers are built from. Reads renderRef for the live
+  // layer configs and the data prop for the rows.
+  const localSearch = (query: string): SearchHit[] =>
+    localAddressSearch(renderRef.current.markerLayers, data?.series ?? [], query, 8);
+
+  // External geocode on demand, using the configured provider. Variable
+  // interpolation lets a custom URL carry an API key from a dashboard variable.
+  const webSearch = (query: string, signal: AbortSignal): Promise<GeocodeResult[]> =>
+    geocode(
+      options.geocoder ?? 'nominatim',
+      query,
+      { url: options.geocoderUrl ?? '', interpolate: renderRef.current.replaceVariables },
+      signal
+    );
+
+  // Place (or move) the search-result pin: a hollow ring marking the location.
+  const setSearchPin = (lng: number, lat: number) => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    const data = { type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: {} } as any;
+    const src = map.getSource(SEARCH_PIN_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    if (src) {
+      src.setData(data);
+    } else {
+      map.addSource(SEARCH_PIN_SOURCE, { type: 'geojson', data });
+      map.addLayer({
+        id: SEARCH_PIN_LAYER,
+        type: 'circle',
+        source: SEARCH_PIN_SOURCE,
+        paint: {
+          'circle-radius': 10,
+          'circle-color': HIGHLIGHT_COLOR,
+          'circle-opacity': 0.25,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': HIGHLIGHT_COLOR,
+        },
+      });
+    }
+  };
+
+  // Remove the pin and close the search popup.
+  const clearSearch = () => {
+    const map = mapRef.current;
+    if (map) {
+      if (map.getLayer(SEARCH_PIN_LAYER)) {
+        map.removeLayer(SEARCH_PIN_LAYER);
+      }
+      if (map.getSource(SEARCH_PIN_SOURCE)) {
+        map.removeSource(SEARCH_PIN_SOURCE);
+      }
+    }
+    popupRef.current?.remove();
+    popupRef.current = null;
+  };
+
+  // User picked a search result: fly there, drop the pin, and open a popup. A
+  // local hit shows the feature's attributes (via the layer's tooltip config); a
+  // web hit shows the geocoded label.
+  const handlePick = (hit: SearchHit) => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    if (hit.source === 'web' && hit.bbox) {
+      map.fitBounds(
+        [
+          [hit.bbox[0], hit.bbox[1]],
+          [hit.bbox[2], hit.bbox[3]],
+        ],
+        { maxZoom: 17, padding: 40, duration: 800 }
+      );
+    } else {
+      map.flyTo({ center: [hit.lng, hit.lat], zoom: Math.max(map.getZoom(), 16), duration: 800 });
+    }
+    setSearchPin(hit.lng, hit.lat);
+
+    // Build the popup HTML.
+    let html: string;
+    if (hit.source === 'local') {
+      const layerCfg = renderRef.current.markerLayers.find((l) => l.id === hit.layerId);
+      html = buildPropsTable(hit.props, {
+        hideEmpty: layerCfg?.tooltipHideEmpty ?? true,
+        include: layerCfg?.tooltipInclude ?? '',
+        exclude: layerCfg?.tooltipExclude ?? '',
+        titleField: layerCfg?.tooltipTitleField ?? hit.layerName,
+        links: layerCfg?.tooltipLinks ?? [],
+        replaceVariables: renderRef.current.replaceVariables,
+        keyColor: renderRef.current.keyColor,
+        titleColor: renderRef.current.titleColor,
+        mutedColor: renderRef.current.mutedColor,
+        linkColor: renderRef.current.linkColor,
+      });
+    } else {
+      html = `<div style="font-size:12px;color:${renderRef.current.titleColor}">${escapeHtml(hit.label)}</div>`;
+    }
+
+    popupRef.current?.remove();
+    popupRef.current = new maplibregl.Popup({ maxWidth: '360px', closeOnClick: false, className: renderRef.current.popupClass })
+      .setLngLat([hit.lng, hit.lat])
+      .setHTML(html)
+      .addTo(map);
   };
 
   // EFFECT 1 — create the map exactly once, on mount, with an EMPTY style plus a
@@ -1176,6 +1291,15 @@ export const VectormapPanel: React.FC<Props> = ({
           />
         )}
       </div>
+      {options.searchEnabled !== false && (
+        <SearchBox
+          localSearch={localSearch}
+          webSearch={webSearch}
+          geocoderEnabled={(options.geocoder ?? 'nominatim') !== 'none'}
+          onPick={handlePick}
+          onClear={clearSearch}
+        />
+      )}
       <LayerControl layers={controlLayers} visibility={effectiveVisibility} onToggle={handleToggle} />
       {selection && (
         <SelectionResults
