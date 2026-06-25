@@ -110,15 +110,20 @@ Key design points:
 **Deferred:** server-side (WFS/SQL) selection for off-screen completeness; richer
 result styling; persisting the window position across selections.
 
-## Address search (local-first + geocoder)
+## Search (address + account/equipment ID, local-first + geocoder)
 
-**Status: IMPLEMENTED.** A search box jumps the map to an address. It searches
-**local query data first**, then an external geocoder **on demand**.
+**Status: IMPLEMENTED.** A search box jumps the map to a matching point. It
+searches **local query data first**, then an external geocoder **on demand** (for
+addresses).
 
-- **Local search** (`src/search.ts`, `localAddressSearch`): matches the query
-  (case-insensitive substring) against each marker layer's configured
-  `addressField`, reading the same data frames the markers are built from
-  (respecting each layer's `refId`). Instant/in-memory, so it runs as you type.
+- **Local search** (`src/search.ts`, `localFeatureSearch`): matches the query
+  (case-insensitive substring) against each marker layer's configured searchable
+  fields — `addressField` (text) plus `accountIdField` and `equipmentIdField`
+  (numeric IDs). Reads the same data frames the markers are built from (respecting
+  each layer's `refId`); instant/in-memory, so it runs as you type. The first
+  matching field per row wins and the hit is tagged with which kind matched
+  (address / account / equipment), shown in the dropdown. Account/equipment are
+  inherently local — only address falls back to the geocoder.
 - **External geocoder** (`src/geocode.ts`): only called on an explicit action
   (Enter / "Search web") to respect provider rate limits. Default is **Nominatim**
   (OpenStreetMap, no key — keep volume low + attribute OSM). A **custom** endpoint

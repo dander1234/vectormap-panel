@@ -202,13 +202,37 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
 
             <Field
               label="Address field"
-              description="Field the address search box matches against (e.g. street address). Blank = exclude this layer from local search."
+              description="Field the search box matches against (e.g. street address). Blank = exclude from search."
             >
               <FieldSelect
                 value={layer.addressField ?? ''}
                 names={names}
                 placeholder="None"
                 onChange={(n) => update(i, { addressField: n })}
+              />
+            </Field>
+
+            <Field
+              label="Account ID field"
+              description="Numeric account number searchable in the search box. Blank = none."
+            >
+              <FieldSelect
+                value={layer.accountIdField ?? ''}
+                names={names}
+                placeholder="None"
+                onChange={(n) => update(i, { accountIdField: n })}
+              />
+            </Field>
+
+            <Field
+              label="Equipment ID field"
+              description="Numeric equipment number searchable in the search box. Blank = none."
+            >
+              <FieldSelect
+                value={layer.equipmentIdField ?? ''}
+                names={names}
+                placeholder="None"
+                onChange={(n) => update(i, { equipmentIdField: n })}
               />
             </Field>
 

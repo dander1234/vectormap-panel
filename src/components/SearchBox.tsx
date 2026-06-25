@@ -105,7 +105,7 @@ export const SearchBox: React.FC<Props> = ({ localSearch, webSearch, geocoderEna
         <input
           className={styles.input}
           value={value}
-          placeholder="Search address…"
+          placeholder="Search address or ID…"
           onChange={(e) => onChangeValue(e.currentTarget.value)}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)} // delay so row clicks register
@@ -130,7 +130,11 @@ export const SearchBox: React.FC<Props> = ({ localSearch, webSearch, geocoderEna
                 <button type="button" key={`l-${idx}`} className={styles.row} onMouseDown={() => pick(hit)}>
                   <Icon name="map-marker" className={styles.rowIcon} />
                   <span className={styles.rowMain}>{hit.label}</span>
-                  <span className={styles.rowMeta}>{hit.source === 'local' ? hit.layerName : ''}</span>
+                  {hit.source === 'local' && (
+                    <span className={styles.rowMeta}>
+                      {hit.kind} · {hit.layerName}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

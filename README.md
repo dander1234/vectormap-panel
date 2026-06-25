@@ -32,10 +32,10 @@ loads the tiles in view at the current zoom.
 - **Per-layer tooltips** — include/exclude fields by regex, hide empty values, a
   title field, and **templated links** (`${field}` placeholders from the clicked
   feature plus Grafana dashboard variables).
-- **Address search** — jump to an address, matching local query data first (a
-  marker layer's address field, e.g. an ONT's street address) and falling back to
-  a geocoder on demand (Nominatim by default, or a custom endpoint). Flies there,
-  drops a pin, and opens a popup.
+- **Search box** — look up an **address**, **account ID**, or **equipment ID**
+  from your query data (per-layer field mappings) and jump to the matching point;
+  for addresses it can also fall back to a geocoder on demand (Nominatim by
+  default, or a custom endpoint). Flies there, drops a pin, and opens a popup.
 - **Basemaps** — OpenStreetMap, CARTO light/dark, Esri satellite, blank, or a
   custom XYZ raster URL.
 - **"Set initial view"** button to capture the current center/zoom into options.
@@ -153,16 +153,18 @@ be **visible** to be selected.
 > Selection captures the features **rendered at the current zoom and position**
 > inside the shape — zoom to the area first for completeness.
 
-### 6. Search for an address
+### 6. Search by address, account ID, or equipment ID
 
 Use the search box (top-center). As you type, matching rows from your query data
-appear under **From data** — these come from any marker layer whose **Address
-field** is set (in that layer's options). Pick one and the map flies to it, drops
-a pin, and shows the feature's attributes.
+appear under **From data**, each tagged by what matched. A marker layer takes part
+in search when you set any of its **Address field**, **Account ID field**, or
+**Equipment ID field** (in that layer's options) to the relevant column — e.g.
+map an ONT layer's `address`, `account_id`, and `equipment_id`. Pick a result and
+the map flies to it, drops a pin, and shows the feature's attributes.
 
-Press **Enter** or **Search web** to look the address up with the external
-**geocoder** (configured under *Address search* in panel options). The **✕**
-clears the result.
+For addresses (only), press **Enter** or **Search web** to look the address up
+with the external **geocoder** (configured under *Address search* in panel
+options). The **✕** clears the result.
 
 > The default geocoder is **Nominatim** (OpenStreetMap) — free, but rate-limited
 > (~1 request/second) and subject to the [OSM usage policy](https://operations.osmfoundation.org/policies/nominatim/);

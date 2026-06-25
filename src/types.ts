@@ -117,9 +117,13 @@ export interface MarkerLayerConfig {
   refId: string;
 
   shape: MarkerShape; // marker shape (circle | square | triangle | …)
-  // Field searched by the address search box (e.g. an ONT's street address).
-  // '' = this layer doesn't take part in local address search.
+  // Fields searched by the on-map search box. Each is '' = not searchable.
+  // addressField is text (street address); accountIdField / equipmentIdField are
+  // numeric IDs. A search-box query is matched (case-insensitive substring)
+  // against whichever of these are set, and a match flies to + pins that point.
   addressField: string;
+  accountIdField: string;
+  equipmentIdField: string;
   latField: string; // field name; '' = auto-detect by common names (lat/latitude/y)
   lngField: string; // field name; '' = auto-detect (lng/long/longitude/lon/x)
   colorMode: MarkerColorMode; // how color is decided (fixed | field | thresholds | regex)
@@ -205,6 +209,8 @@ export function createDefaultMarkerLayer(): MarkerLayerConfig {
     refId: '',
     shape: 'circle',
     addressField: '',
+    accountIdField: '',
+    equipmentIdField: '',
     latField: '',
     lngField: '',
     colorMode: 'field',

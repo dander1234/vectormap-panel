@@ -21,7 +21,7 @@ import { LayerControl, ControlLayer, LegendShape } from './LayerControl';
 import { SelectionResults } from './SelectionResults';
 import { SearchBox } from './SearchBox';
 import { geocode, GeocodeResult } from '../geocode';
-import { localAddressSearch, SearchHit } from '../search';
+import { localFeatureSearch, SearchHit } from '../search';
 import { ensureShapeIcon, iconIdForShape, SHAPE_ICON_EFFECTIVE } from '../shapeIcons';
 import { MAPLIBRE_CSS } from '../maplibreCss';
 import {
@@ -526,7 +526,7 @@ export const VectormapPanel: React.FC<Props> = ({
   // the same data frames the markers are built from. Reads renderRef for the live
   // layer configs and the data prop for the rows.
   const localSearch = (query: string): SearchHit[] =>
-    localAddressSearch(renderRef.current.markerLayers, data?.series ?? [], query, 8);
+    localFeatureSearch(renderRef.current.markerLayers, data?.series ?? [], query, 8);
 
   // External geocode on demand, using the configured provider. Variable
   // interpolation lets a custom URL carry an API key from a dashboard variable.
