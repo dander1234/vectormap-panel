@@ -5,6 +5,7 @@
 import {
   selectTooltipFields,
   runSelectionQuery,
+  highlightTargetFor,
   selectionToCsv,
   FieldFilterConfig,
   SelectionTarget,
@@ -25,6 +26,29 @@ const filter = (over: Partial<FieldFilterConfig> = {}): FieldFilterConfig => ({
 const fakeMap = (features: unknown[]): any => ({
   queryRenderedFeatures: () => features,
   project: (c: [number, number]) => ({ x: c[0], y: c[1] }),
+});
+
+describe('highlightTargetFor', () => {
+  it('builds a target with sourceLayer for a vector-tile feature that has an id', () => {
+    expect(highlightTargetFor({ id: 42, source: 'vt-abc', sourceLayer: 'fiber' })).toEqual({
+      source: 'vt-abc',
+      sourceLayer: 'fiber',
+      id: 42,
+    });
+  });
+
+  it('omits sourceLayer for a marker (GeoJSON) feature', () => {
+    expect(highlightTargetFor({ id: 7, source: 'mk-xyz' })).toEqual({ source: 'mk-xyz', id: 7 });
+  });
+
+  // Regression: GeoServer/MVT tiles often omit per-feature ids. We must NOT throw
+  // away the click (the caller still shows the tooltip) — we just can't highlight.
+  it('returns null when the feature has no id (idless GeoServer tile)', () => {
+    expect(highlightTargetFor({ source: 'vt-abc', sourceLayer: 'fiber' })).toBeNull();
+    expect(highlightTargetFor({ id: undefined, source: 'vt-abc' })).toBeNull();
+    expect(highlightTargetFor(undefined)).toBeNull();
+    expect(highlightTargetFor(null)).toBeNull();
+  });
 });
 
 describe('selectTooltipFields', () => {

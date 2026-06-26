@@ -23,9 +23,13 @@ interface Props {
   onPick: (hit: SearchHit) => void;
   // User cleared the box — remove the result pin/popup (panel's job).
   onClear: () => void;
+  // Greyed-out hint text for the empty box; '' falls back to the built-in default.
+  placeholder?: string;
 }
 
-export const SearchBox: React.FC<Props> = ({ localSearch, webSearch, geocoderEnabled, onPick, onClear }) => {
+const DEFAULT_PLACEHOLDER = 'Search address or ID…';
+
+export const SearchBox: React.FC<Props> = ({ localSearch, webSearch, geocoderEnabled, onPick, onClear, placeholder }) => {
   const styles = useStyles2(getStyles);
   const [value, setValue] = useState('');
   const [open, setOpen] = useState(false);
@@ -105,7 +109,7 @@ export const SearchBox: React.FC<Props> = ({ localSearch, webSearch, geocoderEna
         <input
           className={styles.input}
           value={value}
-          placeholder="Search address or ID…"
+          placeholder={placeholder?.trim() || DEFAULT_PLACEHOLDER}
           onChange={(e) => onChangeValue(e.currentTarget.value)}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)} // delay so row clicks register

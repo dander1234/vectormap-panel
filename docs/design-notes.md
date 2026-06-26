@@ -42,6 +42,18 @@ generate them (hence `shapeIcons.ts`).
 
 These apply to both vector tile layers and marker layers (same model).
 
+**Idless tiles.** The popup is built from `feature.properties` and does not require
+a feature id. Marker (GeoJSON) sources get ids from `generateId`, but MVT sources
+— notably GeoServer — frequently omit the optional per-feature id, so MapLibre
+returns `feature.id === undefined`. The click handler therefore separates the two
+concerns via the pure `highlightTargetFor(feature)` helper (in `selection.ts`,
+unit-tested): the tooltip always renders, while the feature-state highlight is
+applied only when `highlightTargetFor` returns a target (i.e. an id exists). The
+**Select area** pipeline already degraded gracefully here — `dedupeKeyFor` falls
+back to a properties-derived key when there is no id. A future per-layer "ID
+field" option could set the source's `promoteId` to restore exact highlight/dedup
+on idless tiles.
+
 **Still deferred:** richer visual styling of the popup table (theme-aware zebra
 striping, tighter key/value alignment). The current popup is a readable HTML
 attribute table; styling polish is gated on need.
@@ -141,6 +153,9 @@ addresses).
   (or `fitBounds` for a result bbox), a `search-pin` GeoJSON ring layer, and a
   popup — local hits reuse `buildPropsTable` with that layer's tooltip config; web
   hits show the geocoded label. The box's ✕ clears the pin/popup.
+- **Placeholder** (`searchPlaceholder` option): the empty box's greyed-out hint is
+  configurable; `SearchBox` falls back to the built-in default when it's blank or
+  whitespace, so panels saved before this option are unaffected.
 
 **Deferred:** geocoder typeahead/autocomplete; reverse geocoding (click → address);
 searching vector-tile rendered features; persisting the last search.

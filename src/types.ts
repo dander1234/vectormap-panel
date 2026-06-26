@@ -165,6 +165,10 @@ export interface VectormapOptions {
   searchEnabled: boolean;
   geocoder: GeocoderKind; // 'nominatim' | 'custom' | 'none' (local-only)
   geocoderUrl: string; // custom endpoint template with {query}; used when geocoder==='custom'
+  // Greyed-out hint text shown in the empty search box. '' (or unset) falls back
+  // to the built-in default ("Search address or ID…"). Lets a deployment word the
+  // box for its own data, e.g. "Find an ONT or account".
+  searchPlaceholder: string;
 }
 
 // Factory for a fresh layer with sensible defaults and a unique id. Used both by
