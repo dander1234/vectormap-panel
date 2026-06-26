@@ -50,9 +50,13 @@ concerns via the pure `highlightTargetFor(feature)` helper (in `selection.ts`,
 unit-tested): the tooltip always renders, while the feature-state highlight is
 applied only when `highlightTargetFor` returns a target (i.e. an id exists). The
 **Select area** pipeline already degraded gracefully here — `dedupeKeyFor` falls
-back to a properties-derived key when there is no id. A future per-layer "ID
-field" option could set the source's `promoteId` to restore exact highlight/dedup
-on idless tiles.
+back to a properties-derived key when there is no id. The per-layer **ID field**
+option (`idField`) closes the gap: when set, the vector source is created with
+`promoteId: { [sourceLayer]: idField }`, lifting that property to `feature.id` so
+MapLibre populates it. With an id present, `highlightTargetFor` returns a target
+(click + selection highlight light up) and `dedupeKeyFor` keys on the real id
+(exact de-dup). The field must name a property that is present and unique per
+feature in the tile (e.g. a PostGIS primary key surfaced by GeoServer).
 
 **Still deferred:** richer visual styling of the popup table (theme-aware zebra
 striping, tighter key/value alignment). The current popup is a readable HTML

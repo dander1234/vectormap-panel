@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.8.0
+
+- Feature: vector tile layers gain an optional **ID field**. Point it at a unique
+  feature property the tile carries (e.g. `gid` / `fid` / a primary key) and it is
+  promoted to the feature id (MapLibre `promoteId`). This restores **click and
+  Select-area highlighting** on sources that ship no built-in feature id — notably
+  GeoServer — and makes Select-area de-dup exact instead of attribute-based.
+  Leave it blank when your tiles already carry ids. (Pairs with the v1.7.0 fix
+  that already shows tooltips on idless tiles.)
+
 ## 1.7.0
 
 - Fix: clicking a **vector tile feature now shows its tooltip even when the tile

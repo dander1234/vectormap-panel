@@ -104,6 +104,16 @@ export const LayersEditor: React.FC<Props> = ({ value, onChange }) => {
           <Field label="Source layer" description="Layer name INSIDE the tile (not the GeoServer id)">
             <Input value={layer.sourceLayer} onChange={(e) => update(i, { sourceLayer: e.currentTarget.value })} />
           </Field>
+          <Field
+            label="ID field"
+            description="Optional: a unique feature property to use as the id (e.g. gid/fid). Enables click & selection highlighting on tiles with no built-in id (GeoServer)."
+          >
+            <Input
+              value={layer.idField ?? ''}
+              placeholder="(leave blank if tiles already carry ids)"
+              onChange={(e) => update(i, { idField: e.currentTarget.value })}
+            />
+          </Field>
           <Field label="Tile scheme" description="TMS for GeoServer GWC endpoints">
             <Select
               options={SCHEME_OPTIONS}

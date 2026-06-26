@@ -74,6 +74,14 @@ export interface VectorTileLayerConfig {
   tileScheme: TileScheme; // 'tms' for GeoServer GWC TMS endpoints
   geometryType: GeometryType; // line | fill | circle
 
+  // Optional name of a feature PROPERTY to promote to the feature id (MapLibre
+  // `promoteId`). Many MVT sources — notably GeoServer — ship features with no
+  // per-feature id, which disables click/selection HIGHLIGHTING (feature-state is
+  // keyed on the id) and makes Select-area fall back to attribute-based de-dup.
+  // Point this at a unique column the tile carries (e.g. 'gid' / 'fid' / a primary
+  // key) to restore exact highlighting and de-dup. '' = leave ids as-is.
+  idField: string;
+
   // Paint — only the set matching geometryType is used.
   lineColor: string;
   lineWidth: number;
@@ -186,6 +194,7 @@ export function createDefaultLayer(): VectorTileLayerConfig {
     sourceLayer: '',
     tileScheme: 'xyz',
     geometryType: 'line',
+    idField: '',
     lineColor: '#ff5722',
     lineWidth: 2,
     fillColor: '#3388ff',

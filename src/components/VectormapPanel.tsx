@@ -759,7 +759,12 @@ export const VectormapPanel: React.FC<Props> = ({
         const tileUrl = replaceVariables(layer.tileUrl);
 
         try {
-          map.addSource(sId, { type: 'vector', tiles: [tileUrl], scheme: layer.tileScheme });
+          // promoteId lifts a feature PROPERTY to the feature id so feature-state
+          // highlighting + exact Select-area de-dup work on tiles that ship no
+          // built-in id (GeoServer). Keyed by source-layer, per MapLibre's spec.
+          const idField = layer.idField?.trim();
+          const promoteId = idField ? { [layer.sourceLayer]: idField } : undefined;
+          map.addSource(sId, { type: 'vector', tiles: [tileUrl], scheme: layer.tileScheme, promoteId });
 
           if (layer.geometryType === 'fill') {
             map.addLayer({
