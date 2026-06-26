@@ -133,7 +133,10 @@ filters accept Grafana **template variables** (e.g. `…/{z}/{x}/{y}.pbf?region=
 Click a tile feature to open its attribute tooltip. This works even when the
 tiles carry no per-feature id (GeoServer omits the optional MVT feature id by
 default); in that case the tooltip still renders from the feature's properties,
-but the click-highlight ring is only drawn when an id is present.
+but the click-highlight ring is only drawn when an id is present. To get
+highlighting (and exact Select-area de-dup) on idless tiles, set the layer's
+**ID field** to a unique feature property (e.g. `gid` / `fid` / a primary key) —
+it is promoted to the feature id.
 
 ### 4. Use the on-map layer control
 
