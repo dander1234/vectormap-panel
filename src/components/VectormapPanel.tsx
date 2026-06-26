@@ -27,6 +27,7 @@ import { MAPLIBRE_CSS } from '../maplibreCss';
 import {
   selectTooltipFields,
   runSelectionQuery,
+  highlightTargetFor,
   SelectionGeometry,
   SelectionResult,
   SelectionTarget,
@@ -976,16 +977,20 @@ export const VectormapPanel: React.FC<Props> = ({
         return;
       }
       const f = map.queryRenderedFeatures(e.point, { layers: ids })[0];
-      if (!f || f.id === undefined) {
+      if (!f) {
         return;
       }
-      // GeoJSON sources (markers) have no sourceLayer; vector sources need it.
-      const target: { source: string; sourceLayer?: string; id: string | number } = { source: f.source, id: f.id };
-      if (f.sourceLayer) {
-        target.sourceLayer = f.sourceLayer;
+      // Highlight needs a stable feature id (feature-state is keyed on it). Marker
+      // (GeoJSON) sources get one from generateId, but GeoServer/MVT tiles often
+      // ship features with NO id — MapLibre then returns f.id === undefined. In
+      // that case highlightTargetFor returns null and we still show the tooltip
+      // below (the properties are present — that's why the same tiles render
+      // attributes in OpenLayers); we just can't highlight.
+      const target = highlightTargetFor(f);
+      if (target) {
+        map.setFeatureState(target, { highlighted: true });
+        highlightRef.current = target;
       }
-      map.setFeatureState(target, { highlighted: true });
-      highlightRef.current = target;
 
       // Resolve the clicked feature's LAYER to pick up its per-layer tooltip
       // rules — searching both the tile layers and the marker layers, since the
@@ -1294,6 +1299,7 @@ export const VectormapPanel: React.FC<Props> = ({
           geocoderEnabled={(options.geocoder ?? 'nominatim') !== 'none'}
           onPick={handlePick}
           onClear={clearSearch}
+          placeholder={options.searchPlaceholder}
         />
       )}
       <LayerControl layers={controlLayers} visibility={effectiveVisibility} onToggle={handleToggle} />

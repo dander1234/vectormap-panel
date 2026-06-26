@@ -130,6 +130,11 @@ and the country polygons render from vector tiles. For a real
 GeoServer GWC / TMS endpoint, set **Tile scheme = TMS** instead. Tile URLs and
 filters accept Grafana **template variables** (e.g. `…/{z}/{x}/{y}.pbf?region=${region}`).
 
+Click a tile feature to open its attribute tooltip. This works even when the
+tiles carry no per-feature id (GeoServer omits the optional MVT feature id by
+default); in that case the tooltip still renders from the feature's properties,
+but the click-highlight ring is only drawn when an id is present.
+
 ### 4. Use the on-map layer control
 
 Both marker and tile layers appear in the grouped **layer control** (top-right):
@@ -168,7 +173,9 @@ the map flies to it, drops a pin, and shows the feature's attributes.
 
 For addresses (only), press **Enter** or **Search web** to look the address up
 with the external **geocoder** (configured under *Address search* in panel
-options). The **✕** clears the result.
+options). The **✕** clears the result. You can reword the box's greyed-out hint
+via *Address search → Search box placeholder* (blank = the default
+"Search address or ID…").
 
 > The default geocoder is **Nominatim** (OpenStreetMap) — free, but rate-limited
 > (~1 request/second) and subject to the [OSM usage policy](https://operations.osmfoundation.org/policies/nominatim/);

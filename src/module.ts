@@ -100,6 +100,15 @@ export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanel
         category: SEARCH,
         showIf: (opts) => opts.searchEnabled !== false && opts.geocoder === 'custom',
       })
+      .addTextInput({
+        path: 'searchPlaceholder',
+        name: 'Search box placeholder',
+        description: 'Greyed-out hint text shown in the empty search box. Leave blank for the default ("Search address or ID…").',
+        defaultValue: '',
+        settings: { placeholder: 'Search address or ID…' },
+        category: SEARCH,
+        showIf: (opts) => opts.searchEnabled !== false,
+      })
       // --- Marker layers (from query data) ---
       // Markers built from SQL/InfluxDB/… results. Like the tile layers, this is
       // an array of objects, so it needs a custom editor (with a category, or it

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7.0
+
+- Fix: clicking a **vector tile feature now shows its tooltip even when the tile
+  carries no per-feature id**. GeoServer (and many other MVT sources) omit the
+  optional feature id, which previously caused the click to be discarded — the
+  same tiles showed attributes fine in OpenLayers. The popup now renders from the
+  feature's properties regardless; the click-highlight ring is still applied when
+  an id is present. (The **Select area** tool already handled idless tiles.)
+- Feature: the search box's placeholder text is now configurable. *Address search
+  → Search box placeholder* lets you word the empty box for your data (e.g. "Find
+  an ONT or account"); leave it blank for the default ("Search address or ID…").
+
 ## 1.6.0
 
 - Feature: the **Select area** results table now honors each layer's configured

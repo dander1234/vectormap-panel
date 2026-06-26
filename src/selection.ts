@@ -93,6 +93,42 @@ export const selectTooltipFields = (props: Record<string, unknown>, cfg: FieldFi
 };
 
 // ---------------------------------------------------------------------------
+// Feature-state highlight target
+// ---------------------------------------------------------------------------
+
+// A map.setFeatureState identity for one feature (markers have no sourceLayer).
+export interface HighlightTarget {
+  source: string;
+  sourceLayer?: string;
+  id: string | number;
+}
+
+// A loose shape for the one feature returned by a single-point queryRenderedFeatures.
+export interface ClickedFeature {
+  id?: string | number;
+  source?: string;
+  sourceLayer?: string;
+}
+
+// Decide the feature-state highlight target for a clicked feature, or null when
+// it can't be highlighted. Highlighting is keyed on a feature id: marker (GeoJSON)
+// sources get one from generateId, but GeoServer/MVT tiles frequently ship
+// features with NO id, so f.id is undefined. Returning null in that case lets the
+// caller STILL show the tooltip (properties are present — that's why the same
+// tiles render attributes in OpenLayers) while skipping the highlight. Keeping
+// this pure makes the "tooltip works even without an id" contract unit-testable.
+export const highlightTargetFor = (f: ClickedFeature | undefined | null): HighlightTarget | null => {
+  if (!f || f.id === undefined || f.id === null) {
+    return null;
+  }
+  const target: HighlightTarget = { source: f.source ?? '', id: f.id };
+  if (f.sourceLayer) {
+    target.sourceLayer = f.sourceLayer;
+  }
+  return target;
+};
+
+// ---------------------------------------------------------------------------
 // Selection geometry — the "polygon seam"
 // ---------------------------------------------------------------------------
 
