@@ -62,8 +62,13 @@ const BASEMAP_LAYER_ID = 'basemap';
 // of the vector tile overlays.
 const MK_SOURCE_PREFIX = 'mk-src-';
 const MK_LAYER_PREFIX = 'mk-layer-';
+// Text-label layer for a marker layer (a separate symbol layer over the dot).
+// DISTINCT prefix (not mk-layer-) so it's excluded from click/selection
+// hit-testing — clicks fall through to the dot underneath.
+const MK_LABEL_PREFIX = 'mk-label-';
 const mkSourceIdFor = (id: string) => MK_SOURCE_PREFIX + id;
 const mkLayerIdFor = (id: string) => MK_LAYER_PREFIX + id;
+const mkLabelIdFor = (id: string) => MK_LABEL_PREFIX + id;
 const LAT_NAMES = ['latitude', 'lat', 'y'];
 const LNG_NAMES = ['longitude', 'long', 'lng', 'lon', 'x'];
 
@@ -402,6 +407,16 @@ export const VectormapPanel: React.FC<Props> = ({
     visibilityRef.current = visibility;
   }, [visibility]);
 
+  // Active "label view" per marker layer id ('' / missing = "Markers" = dot only).
+  // Runtime-only UI state (not persisted), mirrored in a ref so EFFECT M can read
+  // the live selection when it rebuilds without depending on it. Same pattern as
+  // `visibility`/`visibilityRef` above.
+  const [labelView, setLabelView] = useState<Record<string, string>>({});
+  const labelViewRef = useRef(labelView);
+  useEffect(() => {
+    labelViewRef.current = labelView;
+  }, [labelView]);
+
   // --- "Select area" tool state -------------------------------------------
   // `selectMode` is the toolbar toggle (true while the user is in selection
   // mode). `selectModeRef` mirrors it so the once-bound click/drag handlers
@@ -636,6 +651,12 @@ export const VectormapPanel: React.FC<Props> = ({
       container: containerRef.current,
       style: {
         version: 8,
+        // Glyph (font) endpoint — REQUIRED for any text label (the marker "label
+        // views" feature). Uses the free OpenMapTiles font CDN, the same kind of
+        // external dependency as the basemap tiles. If it's unreachable, labels
+        // simply don't render; the rest of the map is unaffected. Swappable for a
+        // self-hosted glyph server if a deployment needs to avoid the CDN.
+        glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
         sources: {},
         layers: [{ id: 'bg', type: 'background', paint: { 'background-color': theme.colors.background.secondary } }],
       },
@@ -819,9 +840,11 @@ export const VectormapPanel: React.FC<Props> = ({
           console.error(`[vectormap] failed to add layer "${layer.name}":`, err);
         }
       }
-      // Keep all marker layers above the (re-added) vector tile overlays.
+      // Keep all marker layers (dots + their text labels) above the (re-added)
+      // vector tile overlays. Iterating in style order preserves each label's
+      // position above its own dot.
       (map.getStyle().layers ?? []).forEach((l) => {
-        if (l.id.startsWith(MK_LAYER_PREFIX)) {
+        if (l.id.startsWith(MK_LAYER_PREFIX) || l.id.startsWith(MK_LABEL_PREFIX)) {
           map.moveLayer(l.id);
         }
       });
@@ -853,10 +876,15 @@ export const VectormapPanel: React.FC<Props> = ({
       const desiredLayerIds = new Set(cfgs.map((l) => mkLayerIdFor(l.id)));
       const desiredSourceIds = new Set(cfgs.map((l) => mkSourceIdFor(l.id)));
 
-      // Drop marker layers/sources whose config was removed.
+      const desiredLabelIds = new Set(cfgs.map((l) => mkLabelIdFor(l.id)));
+
+      // Drop marker draw layers, label layers, and sources whose config was removed.
       const style = map.getStyle();
       (style.layers ?? []).forEach((l) => {
         if (l.id.startsWith(MK_LAYER_PREFIX) && !desiredLayerIds.has(l.id)) {
+          map.removeLayer(l.id);
+        }
+        if (l.id.startsWith(MK_LABEL_PREFIX) && !desiredLabelIds.has(l.id)) {
           map.removeLayer(l.id);
         }
       });
@@ -938,6 +966,41 @@ export const VectormapPanel: React.FC<Props> = ({
         // Initial visibility from the live runtime override (ref), else the config.
         const desiredVisible = visibilityRef.current[cfg.id] ?? cfg.visible !== false;
         map.setLayoutProperty(lId, 'visibility', desiredVisible ? 'visible' : 'none');
+
+        // --- Text label layer (viewer-selectable "label view") ----------------
+        // A SEPARATE symbol layer over the dot, so the colored anchor is always
+        // kept. Its text-field + visibility are driven by the active view (ref);
+        // when no view is active the layer is simply hidden.
+        const labelId = mkLabelIdFor(cfg.id);
+        if (!map.getLayer(labelId)) {
+          map.addLayer({
+            id: labelId,
+            type: 'symbol',
+            source: sId,
+            layout: {
+              'text-field': '',
+              'text-font': ['Noto Sans Regular'], // available on the glyphs CDN above
+              'text-size': 12,
+              'text-anchor': 'left',
+              'text-offset': [0.8, 0], // sit just right of the dot
+              'text-allow-overlap': false, // declutter: drop colliding labels
+              'text-optional': true,
+            },
+            paint: {
+              'text-color': theme.colors.text.primary,
+              'text-halo-color': theme.colors.background.primary,
+              'text-halo-width': 1.5,
+            },
+          });
+        }
+        // Apply the active label view: show the chosen field's text when a view is
+        // picked AND the layer is visible; otherwise hide the label layer.
+        const activeViewName = labelViewRef.current[cfg.id] ?? '';
+        const activeField = (cfg.labelViews ?? []).find((v) => v.name === activeViewName)?.field ?? '';
+        if (activeField) {
+          map.setLayoutProperty(labelId, 'text-field', ['to-string', ['get', activeField]]);
+        }
+        map.setLayoutProperty(labelId, 'visibility', desiredVisible && activeField ? 'visible' : 'none');
       }
     };
     if (map.isStyleLoaded()) {
@@ -1178,15 +1241,27 @@ export const VectormapPanel: React.FC<Props> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Toggle a layer's visibility from the LayerControl: update state + flip the
-  // MapLibre layout property immediately. The id may belong to a tile layer or a
-  // marker layer (different MapLibre layer-id prefixes), so flip whichever exists.
-  const handleToggle = (layerId: string, visible: boolean) => {
-    setVisibility((prev) => ({ ...prev, [layerId]: visible }));
-    const map = mapRef.current;
-    if (!map) {
+  // Reflect a marker layer's active label view onto its text-label layer: set the
+  // chosen field as text-field and show it only when a view is active AND the
+  // layer itself is visible. Shared by toggle + label-view handlers.
+  const applyMarkerLabel = (map: maplibregl.Map, layerId: string, layerVisible: boolean) => {
+    const labelId = mkLabelIdFor(layerId);
+    if (!map.getLayer(labelId)) {
       return;
     }
+    const cfg = (options.markerLayers ?? []).find((l) => l.id === layerId);
+    const activeViewName = labelViewRef.current[layerId] ?? '';
+    const activeField = (cfg?.labelViews ?? []).find((v) => v.name === activeViewName)?.field ?? '';
+    if (activeField) {
+      map.setLayoutProperty(labelId, 'text-field', ['to-string', ['get', activeField]]);
+    }
+    map.setLayoutProperty(labelId, 'visibility', layerVisible && activeField ? 'visible' : 'none');
+  };
+
+  // Flip one layer's MapLibre visibility (tile OR marker, whichever exists) and
+  // keep its text-label layer in sync. Does NOT touch React state — callers own
+  // that so a group toggle can batch a single setVisibility.
+  const applyLayerVisibility = (map: maplibregl.Map, layerId: string, visible: boolean) => {
     const vis: 'visible' | 'none' = visible ? 'visible' : 'none';
     const vtId = layerIdFor(layerId);
     const mkId = mkLayerIdFor(layerId);
@@ -1196,6 +1271,53 @@ export const VectormapPanel: React.FC<Props> = ({
     if (map.getLayer(mkId)) {
       map.setLayoutProperty(mkId, 'visibility', vis);
     }
+    applyMarkerLabel(map, layerId, visible);
+  };
+
+  // Toggle a single layer from the LayerControl: update state + apply immediately.
+  const handleToggle = (layerId: string, visible: boolean) => {
+    setVisibility((prev) => ({ ...prev, [layerId]: visible }));
+    const map = mapRef.current;
+    if (map) {
+      applyLayerVisibility(map, layerId, visible);
+    }
+  };
+
+  // Toggle every layer in a group at once (the group heading checkbox). Group
+  // membership is read straight from the options (both tile and marker layers),
+  // matching how the LayerControl buckets by the `group` field.
+  const handleToggleGroup = (groupName: string, visible: boolean) => {
+    const ids = [...(options.layers ?? []), ...(options.markerLayers ?? [])]
+      .filter((l) => (l.group || '') === groupName)
+      .map((l) => l.id);
+    setVisibility((prev) => {
+      const next = { ...prev };
+      for (const id of ids) {
+        next[id] = visible;
+      }
+      return next;
+    });
+    const map = mapRef.current;
+    if (map) {
+      for (const id of ids) {
+        applyLayerVisibility(map, id, visible);
+      }
+    }
+  };
+
+  // Pick a marker layer's active label view from the LayerControl dropdown:
+  // update state + re-apply the label layer immediately (respecting visibility).
+  const handleSelectLabelView = (layerId: string, viewName: string) => {
+    setLabelView((prev) => ({ ...prev, [layerId]: viewName }));
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    // labelViewRef is updated by an effect after state commits; use the new value
+    // now so the label reflects the pick without waiting a render.
+    labelViewRef.current = { ...labelViewRef.current, [layerId]: viewName };
+    const layerVisible = visibilityRef.current[layerId] ?? true;
+    applyMarkerLabel(map, layerId, layerVisible);
   };
 
   // "Set initial view": capture the map's current center/zoom into the options.
@@ -1239,6 +1361,7 @@ export const VectormapPanel: React.FC<Props> = ({
       group: l.group,
       shape: (l.shape ?? 'circle') as LegendShape, // legend matches the marker shape
       color: l.fixedColor || '#1f77b4',
+      labelViews: l.labelViews ?? [], // enables the per-layer label-view dropdown
     })),
   ];
 
@@ -1307,7 +1430,14 @@ export const VectormapPanel: React.FC<Props> = ({
           placeholder={options.searchPlaceholder}
         />
       )}
-      <LayerControl layers={controlLayers} visibility={effectiveVisibility} onToggle={handleToggle} />
+      <LayerControl
+        layers={controlLayers}
+        visibility={effectiveVisibility}
+        onToggle={handleToggle}
+        onToggleGroup={handleToggleGroup}
+        activeLabelView={labelView}
+        onSelectLabelView={handleSelectLabelView}
+      />
       {selection && (
         <SelectionResults
           result={selection}

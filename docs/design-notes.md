@@ -62,6 +62,35 @@ feature in the tile (e.g. a PostGIS primary key surfaced by GeoServer).
 striping, tighter key/value alignment). The current popup is a readable HTML
 attribute table; styling polish is gated on need.
 
+## Layer control: group toggle + point label views
+
+**Status: IMPLEMENTED.**
+
+- **Group toggle.** Each named group heading in `LayerControl` carries a checkbox
+  that toggles all its layers. The tri-state math is the pure `groupCheckState(ids,
+  visibility)` helper (`src/layerControl.ts`, unit-tested) → `'on' | 'off' |
+  'mixed'`; the `mixed` state is applied to the DOM input's `indeterminate` via a
+  ref (not a React prop). `handleToggleGroup` batches one `setVisibility` and
+  applies each layer's MapLibre visibility, reusing the per-layer path.
+
+- **Point label views.** A marker layer's `labelViews: {name, field}[]` (options)
+  are viewer-selectable text labels. Each marker layer gets a SECOND MapLibre
+  symbol layer (`mk-label-<id>`, distinct prefix so it's excluded from click and
+  Select-area hit-testing — clicks fall through to the dot). The active view is
+  runtime-only state (`labelView`/`labelViewRef`, mirroring `visibility`); the
+  label layer's `text-field` is set to `['to-string', ['get', field]]` (to-string
+  guards numeric fields) and shown only when a view is active AND the layer is
+  visible. The colored dot is always kept as the anchor. `text-allow-overlap:false`
+  + `text-optional:true` declutter the labels.
+
+  **Glyphs dependency:** MapLibre needs a `glyphs` URL to render ANY text. The map
+  style points at the free OpenMapTiles font CDN
+  (`https://fonts.openmaptiles.org/{fontstack}/{range}.pbf`, font `Noto Sans
+  Regular`) — the same class of external dependency as the raster basemaps. If it
+  is unreachable, labels simply don't render and the rest of the map is
+  unaffected. A self-hosted glyph server can be swapped in if a deployment must
+  avoid the CDN (candidate for a future option).
+
 ## Configurable basemap providers
 
 **Status: IMPLEMENTED for raster basemaps.** The `basemap` option

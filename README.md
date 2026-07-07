@@ -142,7 +142,15 @@ it is promoted to the feature id.
 
 Both marker and tile layers appear in the grouped **layer control** (top-right):
 toggle visibility, and assign a **Group** name to related layers to group them
-together.
+together. Each **group heading has its own checkbox** that shows/hides all layers
+in the group at once (tri-state: checked / unchecked / indeterminate when only
+some are visible).
+
+A marker layer can also define **Point label views** in its options — each a name
+plus a data field. When set, that layer's row in the control gets a dropdown so a
+viewer can re-display its points as text from the data (e.g. each ONT's `address`
+or `account_id`) beside the colored dot, or switch back to **Markers** (dot only).
+The dot and its status color are always kept as the anchor.
 
 ### 5. Select an area
 

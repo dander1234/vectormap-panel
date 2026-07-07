@@ -47,6 +47,15 @@ export interface TooltipLink {
 // fetches the WRONG tiles unless told scheme: 'tms'.
 export type TileScheme = 'xyz' | 'tms';
 
+// One selectable "label view" for a marker layer. Lets a viewer re-display the
+// same points as text pulled from the data — e.g. { name: 'Address', field:
+// 'address' } shows each point's address beside its dot. `name` is what appears
+// in the on-map view dropdown; `field` is the data column rendered as the label.
+export interface MarkerLabelView {
+  name: string;
+  field: string;
+}
+
 // Built-in basemap choices (mirrors the defaults Grafana's Geomap offers), plus
 // 'none' (overlays on a blank background) and 'custom' (your own XYZ raster URL).
 export type BasemapKind = 'osm' | 'carto-light' | 'carto-dark' | 'satellite' | 'none' | 'custom';
@@ -148,6 +157,12 @@ export interface MarkerLayerConfig {
   tooltipExclude: string;
   tooltipTitleField: string;
   tooltipLinks: TooltipLink[];
+
+  // Optional "label views" a viewer can switch between on the map (in addition to
+  // the always-available "Markers" view = the colored dot only). Each view shows
+  // the named field's value as a text label beside each point. '' or [] = no view
+  // dropdown for this layer (points draw as shapes only, the original behavior).
+  labelViews: MarkerLabelView[];
 }
 
 export interface VectormapOptions {
@@ -238,5 +253,6 @@ export function createDefaultMarkerLayer(): MarkerLayerConfig {
     tooltipExclude: '',
     tooltipTitleField: '',
     tooltipLinks: [],
+    labelViews: [],
   };
 }
