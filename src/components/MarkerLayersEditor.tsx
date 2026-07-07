@@ -13,7 +13,7 @@ import React, { useState } from 'react';
 import { StandardEditorProps, SelectableValue, GrafanaTheme2, DataFrame } from '@grafana/data';
 import { Button, ColorPicker, Field, Icon, Input, Select, Switch, useStyles2 } from '@grafana/ui';
 import { css } from '@emotion/css';
-import { MarkerLayerConfig, MarkerShape, MarkerColorMode, createDefaultMarkerLayer } from '../types';
+import { MarkerLayerConfig, MarkerShape, MarkerColorMode, MarkerLabelView, createDefaultMarkerLayer } from '../types';
 import { MARKER_SHAPES } from '../shapeIcons';
 import { TooltipLinksEditor } from './TooltipLinksEditor';
 import { ColorRulesEditor } from './ColorRulesEditor';
@@ -84,6 +84,52 @@ const FieldSelect: React.FC<{
       onCreateOption={(v) => onChange(v)}
       onChange={(v) => onChange(v?.value ?? '')}
     />
+  );
+};
+
+// Editor for a marker layer's `labelViews` — the viewer-selectable text labels.
+// Each row is { name, field }: `name` shows in the on-map dropdown, `field` is the
+// data column drawn as the label. Never mutates the array in place.
+const LabelViewsEditor: React.FC<{
+  value: MarkerLabelView[];
+  names: string[];
+  onChange: (views: MarkerLabelView[]) => void;
+}> = ({ value, names, onChange }) => {
+  const styles = useStyles2(getStyles);
+  const views = value ?? [];
+  const update = (index: number, patch: Partial<MarkerLabelView>) =>
+    onChange(views.map((v, i) => (i === index ? { ...v, ...patch } : v)));
+  const add = () => onChange([...views, { name: '', field: '' }]);
+  const remove = (index: number) => onChange(views.filter((_, i) => i !== index));
+
+  return (
+    <div>
+      <div className={styles.labelViewsHint}>
+        Views a viewer can switch between on the map (a “Markers” option = the dot
+        only is always added). Each shows the field’s value as a text label.
+      </div>
+      {views.map((view, i) => (
+        <div key={i} className={styles.labelViewRow}>
+          <Input
+            value={view.name}
+            placeholder="View name (e.g. Address)"
+            onChange={(e) => update(i, { name: e.currentTarget.value })}
+          />
+          <FieldSelect
+            value={view.field}
+            names={names}
+            placeholder="Field to show as label"
+            onChange={(field) => update(i, { field })}
+          />
+          <Button size="sm" variant="destructive" fill="text" onClick={() => remove(i)} title="Remove view">
+            ✕
+          </Button>
+        </div>
+      ))}
+      <Button icon="plus" size="sm" variant="secondary" onClick={add}>
+        Add label view
+      </Button>
+    </div>
   );
 };
 
@@ -342,6 +388,17 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
               />
             </Field>
 
+            <Field
+              label="Point label views"
+              description="Let viewers re-display these points as text from the data (e.g. address, account id), switchable from the on-map layer control."
+            >
+              <LabelViewsEditor
+                value={layer.labelViews ?? []}
+                names={names}
+                onChange={(labelViews) => update(i, { labelViews })}
+              />
+            </Field>
+
             <Field label="Visible by default">
               <Switch value={layer.visible} onChange={(e) => update(i, { visible: e.currentTarget.checked })} />
             </Field>
@@ -367,6 +424,17 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
 const getStyles = (theme: GrafanaTheme2) => ({
   addTop: css({ marginBottom: theme.spacing(1) }),
   empty: css({ color: theme.colors.text.secondary, marginBottom: theme.spacing(1) }),
+  labelViewsHint: css({
+    color: theme.colors.text.secondary,
+    fontSize: theme.typography.bodySmall.fontSize,
+    marginBottom: theme.spacing(0.5),
+  }),
+  labelViewRow: css({
+    display: 'flex',
+    gap: theme.spacing(1),
+    alignItems: 'center',
+    marginBottom: theme.spacing(0.5),
+  }),
   card: css({
     border: `1px solid ${theme.colors.border.weak}`,
     borderRadius: 2,

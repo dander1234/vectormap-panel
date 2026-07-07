@@ -7,11 +7,12 @@
 // so they share a single grouped control. The panel owns the actual MapLibre
 // visibility changes; this just reports toggles.
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { GrafanaTheme2 } from '@grafana/data';
 import { useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
-import { MarkerShape } from '../types';
+import { MarkerShape, MarkerLabelView } from '../types';
+import { groupCheckState } from '../layerControl';
 
 // Icon drawn next to a layer in the legend. Marker layers use their MarkerShape
 // so the legend matches the map; vector tile layers use 'line' (a bar) or a
@@ -25,6 +26,9 @@ export interface ControlLayer {
   group: string; // group heading ('' = ungrouped)
   color: string; // swatch color (may be a Grafana named palette color)
   shape: LegendShape; // legend icon shape (matches what's drawn on the map)
+  // Marker layers only: optional viewer-selectable text label views. When set,
+  // this layer's row shows a dropdown to switch how its points are labeled.
+  labelViews?: MarkerLabelView[];
 }
 
 // --- Legend icon -----------------------------------------------------------
@@ -103,13 +107,47 @@ const ShapeSwatch: React.FC<{ shape: LegendShape; color: string }> = ({ shape, c
   }
 };
 
+// A group heading + its checkbox. Split out so the indeterminate ("mixed") state
+// can be applied to the DOM input via a ref — `indeterminate` is not a React prop.
+const GroupCheckbox: React.FC<{
+  state: 'on' | 'off' | 'mixed';
+  onChange: (visible: boolean) => void;
+}> = ({ state, onChange }) => {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate = state === 'mixed';
+    }
+  }, [state]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={state === 'on'}
+      // Clicking a mixed/off box turns the group ON; an on box turns it OFF.
+      onChange={() => onChange(state !== 'on')}
+    />
+  );
+};
+
 interface Props {
   layers: ControlLayer[];
   visibility: Record<string, boolean>;
   onToggle: (layerId: string, visible: boolean) => void;
+  onToggleGroup: (groupName: string, visible: boolean) => void;
+  // Active label view per marker layer id ('' / missing = "Markers" = dot only).
+  activeLabelView: Record<string, string>;
+  onSelectLabelView: (layerId: string, viewName: string) => void;
 }
 
-export const LayerControl: React.FC<Props> = ({ layers, visibility, onToggle }) => {
+export const LayerControl: React.FC<Props> = ({
+  layers,
+  visibility,
+  onToggle,
+  onToggleGroup,
+  activeLabelView,
+  onSelectLabelView,
+}) => {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
 
@@ -134,17 +172,44 @@ export const LayerControl: React.FC<Props> = ({ layers, visibility, onToggle }) 
       <div className={styles.title}>Layers</div>
       {groups.map((group) => (
         <div key={group.name || '_ungrouped'} className={styles.group}>
-          {group.name && <div className={styles.groupLabel}>{group.name}</div>}
-          {group.items.map((layer) => (
-            <label key={layer.id} className={styles.item}>
-              <input
-                type="checkbox"
-                checked={visibility[layer.id] !== false}
-                onChange={(e) => onToggle(layer.id, e.currentTarget.checked)}
+          {group.name && (
+            <label className={styles.groupLabel}>
+              {/* One checkbox toggles every layer in this group at once. */}
+              <GroupCheckbox
+                state={groupCheckState(group.items.map((l) => l.id), visibility)}
+                onChange={(visible) => onToggleGroup(group.name, visible)}
               />
-              <ShapeSwatch shape={layer.shape} color={theme.visualization.getColorByName(layer.color)} />
-              <span className={styles.name}>{layer.name || layer.id}</span>
+              <span>{group.name}</span>
             </label>
+          )}
+          {group.items.map((layer) => (
+            <div key={layer.id}>
+              <label className={styles.item}>
+                <input
+                  type="checkbox"
+                  checked={visibility[layer.id] !== false}
+                  onChange={(e) => onToggle(layer.id, e.currentTarget.checked)}
+                />
+                <ShapeSwatch shape={layer.shape} color={theme.visualization.getColorByName(layer.color)} />
+                <span className={styles.name}>{layer.name || layer.id}</span>
+              </label>
+              {layer.labelViews && layer.labelViews.length > 0 && (
+                <select
+                  className={styles.labelSelect}
+                  value={activeLabelView[layer.id] ?? ''}
+                  onChange={(e) => onSelectLabelView(layer.id, e.currentTarget.value)}
+                  title="Point label"
+                >
+                  {/* Implicit default: the colored dot only (current behavior). */}
+                  <option value="">Markers</option>
+                  {layer.labelViews.map((v) => (
+                    <option key={v.name} value={v.name}>
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           ))}
         </div>
       ))}
@@ -170,10 +235,26 @@ const getStyles = (theme: GrafanaTheme2) => ({
   title: css({ fontWeight: theme.typography.fontWeightMedium, marginBottom: theme.spacing(0.5) }),
   group: css({ marginBottom: theme.spacing(0.5) }),
   groupLabel: css({
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(0.5),
     color: theme.colors.text.secondary,
     fontSize: theme.typography.bodySmall.fontSize,
+    fontWeight: theme.typography.fontWeightMedium,
     marginTop: theme.spacing(0.5),
+    cursor: 'pointer',
   }),
   item: css({ display: 'flex', alignItems: 'center', gap: theme.spacing(0.5), cursor: 'pointer', lineHeight: 1.8 }),
   name: css({ whiteSpace: 'nowrap' }),
+  // The per-marker-layer "point label" dropdown, indented under its layer row.
+  labelSelect: css({
+    marginLeft: theme.spacing(2.5),
+    marginBottom: theme.spacing(0.25),
+    maxWidth: 160,
+    background: theme.colors.background.secondary,
+    color: theme.colors.text.primary,
+    border: `1px solid ${theme.colors.border.weak}`,
+    borderRadius: theme.shape.radius.default,
+    fontSize: theme.typography.bodySmall.fontSize,
+  }),
 });

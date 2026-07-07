@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.9.0
+
+- Feature: **group show/hide** in the on-map layer control. Each named group now
+  has a checkbox that toggles every layer in it at once, with a tri-state
+  (checked / unchecked / indeterminate) reflecting whether all, none, or some of
+  its layers are visible.
+- Feature: **point label views**. A marker layer can define a set of label views
+  in its options (each a name + a data field). While viewing the map, a per-layer
+  dropdown in the layer control switches how those points are labeled — e.g. show
+  each ONT's **address** or **account id** as text beside its dot — or back to
+  **Markers** (the colored dot only). The dot (and its status color) is always
+  kept as the anchor. Requires the glyphs font endpoint (added to the map style);
+  numeric fields are rendered via `to-string`.
+
 ## 1.8.0
 
 - Feature: vector tile layers gain an optional **ID field**. Point it at a unique
