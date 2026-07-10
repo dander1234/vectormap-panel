@@ -225,7 +225,11 @@ Key design points:
 - **Results window.** A floating, draggable, resizable window
   (`SelectionResults.tsx`) grouped by layer with counts, per-layer cap
   ("showing N of M"), highlight of selected features (existing `highlighted`
-  feature-state), and Copy / CSV export.
+  feature-state), and export. **Copy** writes BOTH `text/html`
+  (`selectionToHtmlTable` — real grids for email/rich chat) and `text/plain`
+  (`selectionToPlainTable` — aligned, Markdown-style tables) via a `ClipboardItem`,
+  falling back to plain text; **CSV** downloads `selectionToCsv`. All three share
+  the `groupRows` column builder.
 - **Links in the table.** Each layer's `tooltipLinks` are rendered in the results
   table. A link whose URL has exactly one `${field}` placeholder matching a shown
   column turns that column's cell values into links; links referencing

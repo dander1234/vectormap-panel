@@ -9,6 +9,8 @@ import {
   featureNearLine,
   highlightTargetFor,
   selectionToCsv,
+  selectionToPlainTable,
+  selectionToHtmlTable,
   FieldFilterConfig,
   SelectionTarget,
   SelectionResult,
@@ -267,5 +269,24 @@ describe('selectionToCsv', () => {
     expect(csv).toContain('"A, Inc"');
     expect(csv).toContain('"B ""Best"""');
     expect(csv).toContain('"x\ny"');
+  });
+
+  it('selectionToPlainTable: aligned, pipe-delimited, newlines collapsed', () => {
+    const t = selectionToPlainTable(result);
+    expect(t).toContain('Plant (2)');
+    expect(t).toContain('| name'); // pipe-delimited header
+    expect(t).toMatch(/\| -+ \|/); // separator row
+    expect(t).toContain('x y'); // the "x\ny" cell had its newline collapsed
+    // columns padded to a constant width → every line is the same length
+    const lines = t.split('\n').filter((l) => l.startsWith('|'));
+    expect(new Set(lines.map((l) => l.length)).size).toBe(1);
+  });
+
+  it('selectionToHtmlTable: a real <table> with escaped cells', () => {
+    const h = selectionToHtmlTable(result);
+    expect(h).toContain('<table');
+    expect(h).toContain('<th ');
+    expect(h).toContain('<b>Plant</b> (2)');
+    expect(h).toContain('B &quot;Best&quot;'); // quotes escaped
   });
 });

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.16.0
+
+- Feature: the selection window's **Copy** button now copies a **formatted table**
+  instead of raw CSV. It puts both a **rich HTML table** (pastes as a real grid in
+  email / Slack / Teams) and an **aligned plain-text table** (readable in
+  monospace / Markdown) on the clipboard, one table per layer with a heading and
+  count. Newlines in a value are collapsed so rows never break. The **CSV** button
+  is unchanged.
+
 ## 1.15.0
 
 - Feature: **ruler / measurement tool**. A **Measure** button; click points along a
