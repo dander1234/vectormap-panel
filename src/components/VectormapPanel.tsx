@@ -20,6 +20,7 @@ import {
 import { LayerControl, ControlLayer, LegendShape } from './LayerControl';
 import { SelectionResults } from './SelectionResults';
 import { SearchBox } from './SearchBox';
+import { BasemapControl } from './BasemapControl';
 import { geocode, GeocodeResult } from '../geocode';
 import { localFeatureSearch, SearchHit } from '../search';
 import { ensureShapeIcon, iconIdForShape, SHAPE_ICON_EFFECTIVE } from '../shapeIcons';
@@ -417,6 +418,10 @@ export const VectormapPanel: React.FC<Props> = ({
     labelViewRef.current = labelView;
   }, [labelView]);
 
+  // Viewer-selected basemap index (into options.basemapChoices). Runtime-only;
+  // the first choice (index 0) is the default. Ignored when no choices exist.
+  const [activeBasemapIdx, setActiveBasemapIdx] = useState(0);
+
   // --- "Select area" tool state -------------------------------------------
   // `selectMode` is the toolbar toggle (true while the user is in selection
   // mode). `selectModeRef` mirrors it so the once-bound click/drag handlers
@@ -652,11 +657,13 @@ export const VectormapPanel: React.FC<Props> = ({
       style: {
         version: 8,
         // Glyph (font) endpoint — REQUIRED for any text label (the marker "label
-        // views" feature). Uses the free OpenMapTiles font CDN, the same kind of
-        // external dependency as the basemap tiles. If it's unreachable, labels
-        // simply don't render; the rest of the map is unaffected. Swappable for a
-        // self-hosted glyph server if a deployment needs to avoid the CDN.
-        glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+        // views" feature). Uses MapLibre's font server (serves a real `Noto Sans
+        // Regular` PBF), the same kind of external dependency as the basemap
+        // tiles. If it's unreachable, labels simply don't render; the rest of the
+        // map is unaffected. Swappable for a self-hosted glyph server.
+        // (NOTE: fonts.openmaptiles.org was retired to an HTML landing page and no
+        // longer serves fonts — do not use it.)
+        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
         sources: {},
         layers: [{ id: 'bg', type: 'background', paint: { 'background-color': theme.colors.background.secondary } }],
       },
@@ -673,8 +680,13 @@ export const VectormapPanel: React.FC<Props> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Interpolated custom basemap URL (see EFFECT B deps note below).
-  const basemapUrlInterp = replaceVariables(options.basemapUrl ?? '');
+  // Resolve the EFFECTIVE basemap: when the admin curated a switcher list, the
+  // viewer-selected choice wins (first entry is the default); otherwise the single
+  // `basemap` option is used. The interpolated URL only matters for 'custom'.
+  const basemapChoices = options.basemapChoices ?? [];
+  const activeChoice = basemapChoices.length > 0 ? basemapChoices[activeBasemapIdx] ?? basemapChoices[0] : undefined;
+  const effectiveBasemapKind = activeChoice ? activeChoice.kind : options.basemap;
+  const basemapUrlInterp = replaceVariables(activeChoice ? activeChoice.url : options.basemapUrl ?? '');
 
   // EFFECT B — add/swap the basemap raster layer beneath the overlays.
   useEffect(() => {
@@ -691,7 +703,7 @@ export const VectormapPanel: React.FC<Props> = ({
       }
       // Interpolate dashboard/template variables in the custom URL (e.g. an API
       // key or region kept in a Grafana variable).
-      const spec = basemapSourceSpec(options.basemap, basemapUrlInterp);
+      const spec = basemapSourceSpec(effectiveBasemapKind, basemapUrlInterp);
       if (!spec) {
         return; // 'none' (or custom with empty URL) — leave just the background
       }
@@ -711,9 +723,10 @@ export const VectormapPanel: React.FC<Props> = ({
     return () => {
       map.off('load', applyBasemap);
     };
-    // Depend on the INTERPOLATED url (not the raw template) so swapping a
-    // dashboard variable re-runs this effect — options identity is unchanged then.
-  }, [options.basemap, basemapUrlInterp]);
+    // Depend on the resolved kind (switcher choice or single option) and the
+    // INTERPOLATED url so swapping a dashboard variable OR the viewer picking a
+    // different basemap re-runs this effect.
+  }, [effectiveBasemapKind, basemapUrlInterp]);
 
   // EFFECT 2 — keep the canvas sized to the panel.
   useEffect(() => {
@@ -980,19 +993,24 @@ export const VectormapPanel: React.FC<Props> = ({
             layout: {
               'text-field': '',
               'text-font': ['Noto Sans Regular'], // available on the glyphs CDN above
-              'text-size': 12,
               'text-anchor': 'left',
               'text-offset': [0.8, 0], // sit just right of the dot
               'text-allow-overlap': false, // declutter: drop colliding labels
               'text-optional': true,
             },
-            paint: {
-              'text-color': theme.colors.text.primary,
-              'text-halo-color': theme.colors.background.primary,
-              'text-halo-width': 1.5,
-            },
           });
         }
+        // Label text formatting (applied every run so option edits take effect).
+        const labelColor = cfg.labelTextColor
+          ? theme.visualization.getColorByName(cfg.labelTextColor)
+          : theme.colors.text.primary;
+        const haloColor = cfg.labelHaloColor
+          ? theme.visualization.getColorByName(cfg.labelHaloColor)
+          : theme.colors.background.primary;
+        map.setLayoutProperty(labelId, 'text-size', cfg.labelTextSize || 12);
+        map.setPaintProperty(labelId, 'text-color', labelColor);
+        map.setPaintProperty(labelId, 'text-halo-color', haloColor);
+        map.setPaintProperty(labelId, 'text-halo-width', cfg.labelHaloWidth ?? 1.5);
         // Apply the active label view: show the chosen field's text when a view is
         // picked AND the layer is visible; otherwise hide the label layer.
         const activeViewName = labelViewRef.current[cfg.id] ?? '';
@@ -1437,6 +1455,11 @@ export const VectormapPanel: React.FC<Props> = ({
         onToggleGroup={handleToggleGroup}
         activeLabelView={labelView}
         onSelectLabelView={handleSelectLabelView}
+      />
+      <BasemapControl
+        choices={basemapChoices}
+        activeIndex={activeBasemapIdx}
+        onChange={setActiveBasemapIdx}
       />
       {selection && (
         <SelectionResults

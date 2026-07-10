@@ -9,6 +9,7 @@ import { VectormapOptions, createDefaultLayer } from './types';
 import { VectormapPanel } from './components/VectormapPanel';
 import { LayersEditor } from './components/LayersEditor';
 import { MarkerLayersEditor } from './components/MarkerLayersEditor';
+import { BasemapChoicesEditor } from './components/BasemapChoicesEditor';
 
 const VIEW = ['Map view'];
 const BASEMAP = ['Basemap'];
@@ -67,6 +68,16 @@ export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanel
         defaultValue: '',
         category: BASEMAP,
         showIf: (opts) => opts.basemap === 'custom',
+      })
+      .addCustomEditor({
+        id: 'basemapChoices',
+        path: 'basemapChoices',
+        name: 'Selectable basemaps (viewer switcher)',
+        description:
+          'Curate basemaps a viewer can switch between on the map. When set, this picker replaces the single Basemap above.',
+        defaultValue: [],
+        editor: BasemapChoicesEditor,
+        category: BASEMAP,
       })
       // --- Address search ---
       .addBooleanSwitch({

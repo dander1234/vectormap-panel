@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.10.0
+
+- Feature: **label text formatting**. Each marker layer with label views now has
+  **Label size**, **Label color**, **Halo color**, and **Halo width** options that
+  style the text it draws (blank colors fall back to the theme). Changes apply
+  live.
+- Feature: **viewer basemap switcher**. Configure a curated list under *Basemap →
+  Selectable basemaps*; when non-empty, an on-map picker (bottom-right) lets a
+  viewer switch between those basemaps at runtime (the first is the default, and
+  the single Basemap option is bypassed). Each choice is a label + basemap kind,
+  with a custom XYZ URL for the Custom kind.
+- Fix: the point label-view **dropdown now renders correctly** — it used a native
+  `<select>` that Grafana's global CSS collapsed (the current option wasn't
+  shown); replaced with Grafana's themed `Select`.
+- Fix: the label glyph (font) endpoint now points at MapLibre's font server;
+  the previous OpenMapTiles font host was retired to an HTML landing page and no
+  longer served fonts, which broke label rendering.
+
 ## 1.9.0
 
 - Feature: **group show/hide** in the on-map layer control. Each named group now
