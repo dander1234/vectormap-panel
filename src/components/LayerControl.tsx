@@ -8,8 +8,8 @@
 // visibility changes; this just reports toggles.
 
 import React, { useEffect, useRef } from 'react';
-import { GrafanaTheme2 } from '@grafana/data';
-import { useStyles2, useTheme2 } from '@grafana/ui';
+import { GrafanaTheme2, SelectableValue } from '@grafana/data';
+import { Select, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import { MarkerShape, MarkerLabelView } from '../types';
 import { groupCheckState } from '../layerControl';
@@ -107,6 +107,13 @@ const ShapeSwatch: React.FC<{ shape: LegendShape; color: string }> = ({ shape, c
   }
 };
 
+// Options for a layer's label-view Select: the implicit "Markers" (dot-only)
+// default plus each configured view. `value` is the view name ('' = Markers).
+const labelViewOptions = (views: MarkerLabelView[]): Array<SelectableValue<string>> => [
+  { label: 'Markers', value: '' },
+  ...views.map((v) => ({ label: v.name, value: v.name })),
+];
+
 // A group heading + its checkbox. Split out so the indeterminate ("mixed") state
 // can be applied to the DOM input via a ref — `indeterminate` is not a React prop.
 const GroupCheckbox: React.FC<{
@@ -194,20 +201,19 @@ export const LayerControl: React.FC<Props> = ({
                 <span className={styles.name}>{layer.name || layer.id}</span>
               </label>
               {layer.labelViews && layer.labelViews.length > 0 && (
-                <select
-                  className={styles.labelSelect}
-                  value={activeLabelView[layer.id] ?? ''}
-                  onChange={(e) => onSelectLabelView(layer.id, e.currentTarget.value)}
-                  title="Point label"
-                >
-                  {/* Implicit default: the colored dot only (current behavior). */}
-                  <option value="">Markers</option>
-                  {layer.labelViews.map((v) => (
-                    <option key={v.name} value={v.name}>
-                      {v.name}
-                    </option>
-                  ))}
-                </select>
+                <div className={styles.labelSelect}>
+                  {/* Grafana Select (not a native <select>, which the app's global
+                      CSS collapses so the current value isn't shown). The implicit
+                      "Markers" option (value '') = the colored dot only. */}
+                  <Select
+                    options={labelViewOptions(layer.labelViews)}
+                    value={activeLabelView[layer.id] ?? ''}
+                    onChange={(v: SelectableValue<string>) => onSelectLabelView(layer.id, v?.value ?? '')}
+                    size="sm"
+                    isSearchable={false}
+                    aria-label={`Point label for ${layer.name || layer.id}`}
+                  />
+                </div>
               )}
             </div>
           ))}
@@ -249,12 +255,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
   // The per-marker-layer "point label" dropdown, indented under its layer row.
   labelSelect: css({
     marginLeft: theme.spacing(2.5),
-    marginBottom: theme.spacing(0.25),
-    maxWidth: 160,
-    background: theme.colors.background.secondary,
-    color: theme.colors.text.primary,
-    border: `1px solid ${theme.colors.border.weak}`,
-    borderRadius: theme.shape.radius.default,
-    fontSize: theme.typography.bodySmall.fontSize,
+    marginBottom: theme.spacing(0.5),
+    width: 150,
   }),
 });

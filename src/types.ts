@@ -60,6 +60,15 @@ export interface MarkerLabelView {
 // 'none' (overlays on a blank background) and 'custom' (your own XYZ raster URL).
 export type BasemapKind = 'osm' | 'carto-light' | 'carto-dark' | 'satellite' | 'none' | 'custom';
 
+// One entry in the viewer-facing basemap switcher. The admin curates a list of
+// these; when the list is non-empty an on-map picker lets the viewer switch
+// between them at runtime. `url` is only used when `kind === 'custom'`.
+export interface BasemapChoice {
+  label: string; // shown in the picker
+  kind: BasemapKind;
+  url: string; // XYZ raster template, used only for kind 'custom'
+}
+
 // One configurable vector tile (MVT) layer. The panel can show several of these
 // at once; each becomes its own MapLibre source + draw layer.
 export interface VectorTileLayerConfig {
@@ -163,6 +172,12 @@ export interface MarkerLayerConfig {
   // the named field's value as a text label beside each point. '' or [] = no view
   // dropdown for this layer (points draw as shapes only, the original behavior).
   labelViews: MarkerLabelView[];
+
+  // Text formatting for the labels this layer draws (all label views share it).
+  labelTextSize: number; // font size in px
+  labelTextColor: string; // '' = theme text color; else a fixed/named color
+  labelHaloColor: string; // '' = theme background (outline for legibility)
+  labelHaloWidth: number; // halo thickness in px (0 = none)
 }
 
 export interface VectormapOptions {
@@ -174,6 +189,12 @@ export interface VectormapOptions {
   // Basemap drawn beneath the vector tile layers.
   basemap: BasemapKind;
   basemapUrl: string; // XYZ raster template, used only when basemap === 'custom'
+
+  // Optional viewer-facing basemap switcher. When this curated list is non-empty,
+  // an on-map picker lets viewers switch between these basemaps at runtime (the
+  // first entry is the default) and the single `basemap` option above is ignored.
+  // Empty = no picker; the map uses `basemap` as before.
+  basemapChoices: BasemapChoice[];
 
   // The vector tile layers to render, top-most last.
   layers: VectorTileLayerConfig[];
@@ -254,5 +275,9 @@ export function createDefaultMarkerLayer(): MarkerLayerConfig {
     tooltipTitleField: '',
     tooltipLinks: [],
     labelViews: [],
+    labelTextSize: 12,
+    labelTextColor: '',
+    labelHaloColor: '',
+    labelHaloWidth: 1.5,
   };
 }

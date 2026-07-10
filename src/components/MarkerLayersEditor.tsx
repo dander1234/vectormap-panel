@@ -11,7 +11,7 @@
 
 import React, { useState } from 'react';
 import { StandardEditorProps, SelectableValue, GrafanaTheme2, DataFrame } from '@grafana/data';
-import { Button, ColorPicker, Field, Icon, Input, Select, Switch, useStyles2 } from '@grafana/ui';
+import { Button, ColorPicker, Field, Icon, Input, Select, Switch, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import { MarkerLayerConfig, MarkerShape, MarkerColorMode, MarkerLabelView, createDefaultMarkerLayer } from '../types';
 import { MARKER_SHAPES } from '../shapeIcons';
@@ -137,6 +137,7 @@ type Props = StandardEditorProps<MarkerLayerConfig[]>;
 
 export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }) => {
   const styles = useStyles2(getStyles);
+  const theme = useTheme2();
   const layers = value ?? [];
   const frames = context?.data ?? [];
   const refIds = refIdsFrom(frames);
@@ -399,6 +400,37 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
               />
             </Field>
 
+            {(layer.labelViews ?? []).length > 0 && (
+              <div className={styles.labelStyleRow}>
+                <Field label="Label size (px)" className={styles.labelStyleField}>
+                  <Input
+                    type="number"
+                    value={layer.labelTextSize ?? 12}
+                    onChange={(e) => update(i, { labelTextSize: numFrom(e, 12) })}
+                  />
+                </Field>
+                <Field label="Label color" className={styles.labelStyleField} description="Blank = theme">
+                  <ColorPicker
+                    color={layer.labelTextColor || theme.colors.text.primary}
+                    onChange={(c) => update(i, { labelTextColor: c })}
+                  />
+                </Field>
+                <Field label="Halo color" className={styles.labelStyleField} description="Outline; blank = theme">
+                  <ColorPicker
+                    color={layer.labelHaloColor || theme.colors.background.primary}
+                    onChange={(c) => update(i, { labelHaloColor: c })}
+                  />
+                </Field>
+                <Field label="Halo width (px)" className={styles.labelStyleField}>
+                  <Input
+                    type="number"
+                    value={layer.labelHaloWidth ?? 1.5}
+                    onChange={(e) => update(i, { labelHaloWidth: numFrom(e, 1.5) })}
+                  />
+                </Field>
+              </div>
+            )}
+
             <Field label="Visible by default">
               <Switch value={layer.visible} onChange={(e) => update(i, { visible: e.currentTarget.checked })} />
             </Field>
@@ -435,6 +467,14 @@ const getStyles = (theme: GrafanaTheme2) => ({
     alignItems: 'center',
     marginBottom: theme.spacing(0.5),
   }),
+  labelStyleRow: css({
+    display: 'flex',
+    gap: theme.spacing(1),
+    alignItems: 'flex-end',
+    flexWrap: 'wrap',
+    marginBottom: theme.spacing(1),
+  }),
+  labelStyleField: css({ marginBottom: 0 }),
   card: css({
     border: `1px solid ${theme.colors.border.weak}`,
     borderRadius: 2,

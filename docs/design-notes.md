@@ -83,13 +83,30 @@ attribute table; styling polish is gated on need.
   visible. The colored dot is always kept as the anchor. `text-allow-overlap:false`
   + `text-optional:true` declutter the labels.
 
+  **Label formatting:** each marker layer carries `labelTextSize`, `labelTextColor`,
+  `labelHaloColor`, `labelHaloWidth` (blank colors resolve to the theme). These are
+  applied to the label symbol layer's `text-size`/`text-color`/`text-halo-*` on
+  every `applyMarkers` run so option edits take effect live.
+
   **Glyphs dependency:** MapLibre needs a `glyphs` URL to render ANY text. The map
-  style points at the free OpenMapTiles font CDN
-  (`https://fonts.openmaptiles.org/{fontstack}/{range}.pbf`, font `Noto Sans
+  style points at MapLibre's font server
+  (`https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf`, font `Noto Sans
   Regular`) — the same class of external dependency as the raster basemaps. If it
   is unreachable, labels simply don't render and the rest of the map is
   unaffected. A self-hosted glyph server can be swapped in if a deployment must
-  avoid the CDN (candidate for a future option).
+  avoid the CDN (candidate for a future option). NOTE:
+  `fonts.openmaptiles.org` was retired to an HTML landing page and no longer
+  serves fonts — do not use it.
+
+## Viewer basemap switcher
+
+**Status: IMPLEMENTED.** `options.basemapChoices` (a curated `{label, kind, url}[]`,
+edited via `BasemapChoicesEditor`) drives an on-map picker (`BasemapControl`,
+bottom-right). When the list is non-empty it takes over from the single `basemap`
+option: EFFECT B resolves the effective basemap from the viewer-selected index
+(`activeBasemapIdx`, runtime-only state, default 0) and re-runs on change. Empty
+list → the single `basemap`/`basemapUrl` option, unchanged. Custom-kind choices
+interpolate their URL through `replaceVariables` like the single custom basemap.
 
 ## Configurable basemap providers
 

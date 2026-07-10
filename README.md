@@ -88,6 +88,11 @@ dashboard) — a basemap renders immediately. From there:
 In the panel options, set **Basemap** to OpenStreetMap, CARTO light/dark, Esri
 satellite, blank, or a **custom XYZ** raster URL. The map updates live.
 
+To let **viewers** switch basemaps themselves, configure *Basemap → Selectable
+basemaps*: a curated list of choices (each a label + kind, plus a URL for Custom).
+When non-empty, an on-map **Basemap** picker appears bottom-right and the single
+Basemap option above is bypassed (the first choice is the default).
+
 ### 2. Add markers from query data (works with built-in TestData)
 
 You don't need a real datasource to see markers. Use Grafana's built-in
@@ -150,7 +155,9 @@ A marker layer can also define **Point label views** in its options — each a n
 plus a data field. When set, that layer's row in the control gets a dropdown so a
 viewer can re-display its points as text from the data (e.g. each ONT's `address`
 or `account_id`) beside the colored dot, or switch back to **Markers** (dot only).
-The dot and its status color are always kept as the anchor.
+The dot and its status color are always kept as the anchor. The label text is
+formattable per layer — **size**, **color**, **halo color**, and **halo width**
+(blank colors follow the theme).
 
 ### 5. Select an area
 
