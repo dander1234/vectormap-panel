@@ -10,6 +10,7 @@ import { VectormapPanel } from './components/VectormapPanel';
 import { LayersEditor } from './components/LayersEditor';
 import { MarkerLayersEditor } from './components/MarkerLayersEditor';
 import { BasemapChoicesEditor } from './components/BasemapChoicesEditor';
+import { LayerOrganizerEditor } from './components/LayerOrganizerEditor';
 
 const VIEW = ['Map view'];
 const BASEMAP = ['Basemap'];
@@ -42,6 +43,16 @@ export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanel
         description: 'MapLibre zoom level (0 = whole world, ~12 = city, ~18 = building)',
         defaultValue: 2,
         settings: { min: 0, max: 22, step: 0.5 },
+        category: VIEW,
+      })
+      .addCustomEditor({
+        id: 'layerOrder',
+        path: 'layerOrder',
+        name: 'Organize layer menu',
+        description:
+          'Drag to reorder the layer control: reorder categories and reorder layers within a category. Affects the menu order only (not map draw order or category membership).',
+        defaultValue: { groupOrder: [], itemOrder: [] },
+        editor: LayerOrganizerEditor,
         category: VIEW,
       })
       // --- Basemap ---

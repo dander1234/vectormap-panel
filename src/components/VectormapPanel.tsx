@@ -1487,6 +1487,7 @@ export const VectormapPanel: React.FC<Props> = ({
         onToggleGroup={handleToggleGroup}
         activeLabelView={labelView}
         onSelectLabelView={handleSelectLabelView}
+        layerOrder={options.layerOrder ?? { groupOrder: [], itemOrder: [] }}
       />
       <BasemapControl
         choices={basemapChoices}

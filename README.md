@@ -152,6 +152,11 @@ in the group at once (tri-state: checked / unchecked / indeterminate when only
 some are visible), and a **chevron** to collapse/expand the group's layers (click
 the chevron or the group name).
 
+To arrange the control, use *Map view → **Organize layer menu***: drag to reorder
+the categories and the layers within each. This sets the menu's display order only
+— it doesn't change map draw order or which category a layer belongs to (that's the
+layer's Group field).
+
 A marker layer can also define **Point label views** in its options — each a name
 plus a data field. When set, that layer's row in the control gets a dropdown so a
 viewer can re-display its points as text from the data (e.g. each ONT's `address`
