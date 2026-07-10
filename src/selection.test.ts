@@ -5,6 +5,8 @@
 import {
   selectTooltipFields,
   runSelectionQuery,
+  buildSelectionResult,
+  featureNearLine,
   highlightTargetFor,
   selectionToCsv,
   FieldFilterConfig,
@@ -128,6 +130,42 @@ describe('runSelectionQuery', () => {
     });
     expect(result.groups.map((g) => g.layerName)).toEqual(['Plant', 'ONTs']);
     expect(result.totalCount).toBe(2);
+  });
+});
+
+describe('featureNearLine', () => {
+  const id = (c: [number, number]): [number, number] => c; // identity projection
+  const line: Array<[number, number]> = [[0, 0], [10, 0]]; // horizontal line y=0
+
+  it('matches a point within the buffer, not one outside it', () => {
+    expect(featureNearLine({ type: 'Point', coordinates: [5, 3] }, line, id, 6)).toBe(true);
+    expect(featureNearLine({ type: 'Point', coordinates: [5, 9] }, line, id, 6)).toBe(false);
+  });
+
+  it('matches a line that crosses the drawn line', () => {
+    // a vertical segment crossing y=0 at x=5
+    expect(featureNearLine({ type: 'LineString', coordinates: [[5, -5], [5, 5]] }, line, id, 1)).toBe(true);
+    // a parallel line far away
+    expect(featureNearLine({ type: 'LineString', coordinates: [[0, 20], [10, 20]] }, line, id, 1)).toBe(false);
+  });
+});
+
+describe('buildSelectionResult', () => {
+  const target: SelectionTarget = {
+    mapLayerId: 'vt-layer-a',
+    layerId: 'a',
+    layerName: 'Plant',
+    isMarker: false,
+    filter: filter(),
+    links: [],
+  };
+
+  it('groups + dedupes an accumulated feature list (the click-select path)', () => {
+    const f1 = { layer: { id: 'vt-layer-a' }, id: 1, source: 's', sourceLayer: 'plant', properties: {} };
+    const f2 = { layer: { id: 'vt-layer-a' }, id: 2, source: 's', sourceLayer: 'plant', properties: {} };
+    const result = buildSelectionResult([f1, f2, { ...f1 }], [target], 10);
+    expect(result.totalCount).toBe(2);
+    expect(result.groups[0].features).toHaveLength(2);
   });
 });
 

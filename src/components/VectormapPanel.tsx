@@ -28,6 +28,8 @@ import { MAPLIBRE_CSS } from '../maplibreCss';
 import {
   selectTooltipFields,
   runSelectionQuery,
+  buildSelectionResult,
+  dedupeKeyFor,
   highlightTargetFor,
   SelectionGeometry,
   SelectionResult,
@@ -35,6 +37,11 @@ import {
   FieldFilterConfig,
 } from '../selection';
 import { fillUrl, sanitizeUrl } from '../links';
+import { pathLengthMeters, formatDistanceBoth } from '../measure';
+import { MeasureReadout } from './MeasureReadout';
+
+// The selection tools offered in the toolbar.
+type SelectTool = 'box' | 'lasso' | 'line' | 'trace' | 'click';
 
 // MapLibre's stylesheet (positions the canvas, controls, and popups). Grafana
 // plugin code rules forbid importing stylesheet files directly, so instead of a
@@ -103,6 +110,11 @@ const HIGHLIGHT_COLOR = '#00e5ff';
 // top of everything).
 const SEARCH_PIN_SOURCE = 'search-pin';
 const SEARCH_PIN_LAYER = 'search-pin';
+// Measurement (ruler) draw layers — a geo-anchored line + its vertices.
+const MEASURE_LINE_SRC = 'measure-line';
+const MEASURE_LINE_LAYER = 'measure-line';
+const MEASURE_PT_SRC = 'measure-pts';
+const MEASURE_PT_LAYER = 'measure-pts';
 
 // Paint expression: highlight value when the feature is selected, else normal.
 // Returns `any` to sidestep MapLibre's strict expression typing.
@@ -454,14 +466,29 @@ export const VectormapPanel: React.FC<Props> = ({
   useEffect(() => {
     selectModeRef.current = selectMode;
   }, [selectMode]);
-  // Which drawing tool the selection uses: 'box' (drag a rectangle) or 'lasso'
-  // (freehand polygon — good for tracing a run of plant). Mirrored in a ref so
-  // the once-bound EFFECT 6 reads the live value.
-  const [selectTool, setSelectTool] = useState<'box' | 'lasso'>('box');
-  const selectToolRef = useRef<'box' | 'lasso'>('box');
+  // Which selection tool is active: 'box' (drag a rectangle), 'lasso' (freehand
+  // polygon), 'line' (straight two-point line), 'trace' (freehand open line), or
+  // 'click' (pick features one at a time). Mirrored in a ref so the once-bound
+  // EFFECT 5/6 read the live value.
+  const [selectTool, setSelectTool] = useState<SelectTool>('box');
+  const selectToolRef = useRef<SelectTool>('box');
   useEffect(() => {
     selectToolRef.current = selectTool;
   }, [selectTool]);
+  // Accumulated features for the 'click' (pick) tool, keyed by dedupe key. Each
+  // entry keeps the rendered feature + its target so we can rebuild the result.
+  const clickSelectedRef = useRef<Map<string, { target: SelectionTarget; feature: any }>>(new Map());
+
+  // --- Measurement (ruler) tool state -------------------------------------
+  // Separate from selection; mutually exclusive with it. `measurePointsRef` holds
+  // the committed [lng,lat] vertices; the readout shows the running total.
+  const [measureMode, setMeasureMode] = useState(false);
+  const measureModeRef = useRef(false);
+  useEffect(() => {
+    measureModeRef.current = measureMode;
+  }, [measureMode]);
+  const measurePointsRef = useRef<Array<[number, number]>>([]);
+  const [measureMeters, setMeasureMeters] = useState(0);
   // The current selection results shown in the bottom drawer (null = drawer
   // closed). Populated by runSelection after a box is drawn.
   const [selection, setSelection] = useState<SelectionResult | null>(null);
@@ -516,49 +543,122 @@ export const VectormapPanel: React.FC<Props> = ({
     selectionHighlightRef.current = next;
   };
 
-  // Run a selection for a drawn geometry: gather the layers that are both
-  // selectable AND currently visible, query them, and show the results drawer.
-  // Reads everything from refs so the once-bound EFFECT 6 can call it safely.
-  const runSelection = (geometry: SelectionGeometry) => {
-    const map = mapRef.current;
-    if (!map) {
-      return;
-    }
+  // The layers eligible for selection: both `selectable` AND currently visible,
+  // tile layers first then markers (matches draw order / the layer control). Read
+  // from refs so the once-bound EFFECT 5/6 handlers can call it safely.
+  const selectionTargets = (map: maplibregl.Map): SelectionTarget[] => {
     const { layers, markerLayers } = renderRef.current;
     const isVisible = (id: string, dflt: boolean) => visibilityRef.current[id] ?? dflt;
-
     const targets: SelectionTarget[] = [];
-    // Tile layers first, then markers — matches draw order / the layer control.
     for (const l of layers) {
       if (l.selectable === false || !isVisible(l.id, l.visible !== false) || !map.getLayer(layerIdFor(l.id))) {
         continue;
       }
-      targets.push({
-        mapLayerId: layerIdFor(l.id),
-        layerId: l.id,
-        layerName: l.name,
-        isMarker: false,
-        filter: filterOf(l),
-        links: l.tooltipLinks ?? [],
-      });
+      targets.push({ mapLayerId: layerIdFor(l.id), layerId: l.id, layerName: l.name, isMarker: false, filter: filterOf(l), links: l.tooltipLinks ?? [] });
     }
     for (const l of markerLayers) {
       if (l.selectable === false || !isVisible(l.id, l.visible !== false) || !map.getLayer(mkLayerIdFor(l.id))) {
         continue;
       }
-      targets.push({
-        mapLayerId: mkLayerIdFor(l.id),
-        layerId: l.id,
-        layerName: l.name,
-        isMarker: true,
-        filter: filterOf(l),
-        links: l.tooltipLinks ?? [],
-      });
+      targets.push({ mapLayerId: mkLayerIdFor(l.id), layerId: l.id, layerName: l.name, isMarker: true, filter: filterOf(l), links: l.tooltipLinks ?? [] });
     }
+    return targets;
+  };
 
-    const result = runSelectionQuery({ map, geometry, targets, maxPerLayer: 2000 });
+  // Run a selection for a drawn geometry (box/lasso/line) and show the results.
+  const runSelection = (geometry: SelectionGeometry) => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    // A fresh drawn selection replaces any accumulated click-select set.
+    clickSelectedRef.current.clear();
+    const result = runSelectionQuery({ map, geometry, targets: selectionTargets(map), maxPerLayer: 2000 });
     setSelection(result);
     highlightSelected(result);
+  };
+
+  // Click-select ("Pick"): toggle the top feature at a pixel point in/out of the
+  // running selection, then rebuild the results from the accumulated set.
+  const toggleClickSelect = (point: maplibregl.PointLike) => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    const targets = selectionTargets(map);
+    const byId = new Map(targets.map((t) => [t.mapLayerId, t]));
+    const f = map.queryRenderedFeatures(point, { layers: targets.map((t) => t.mapLayerId) })[0];
+    if (!f) {
+      return;
+    }
+    const target = byId.get(String(f.layer?.id ?? ''));
+    if (!target) {
+      return;
+    }
+    const key = dedupeKeyFor(f as any, target.filter);
+    const acc = clickSelectedRef.current;
+    if (acc.has(key)) {
+      acc.delete(key); // clicking a selected feature removes it
+    } else {
+      acc.set(key, { target, feature: f });
+    }
+    // Rebuild from the accumulated features (targets still in layer order).
+    const raw = Array.from(acc.values()).map((v) => v.feature);
+    const result = buildSelectionResult(raw, targets, 2000);
+    setSelection(result);
+    highlightSelected(result);
+  };
+
+  // --- Measurement (ruler) ------------------------------------------------
+  // Create the measure line + vertex layers once (geo-anchored, above overlays).
+  const ensureMeasureLayers = (map: maplibregl.Map) => {
+    if (!map.getSource(MEASURE_LINE_SRC)) {
+      map.addSource(MEASURE_LINE_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } as any });
+      map.addLayer({
+        id: MEASURE_LINE_LAYER,
+        type: 'line',
+        source: MEASURE_LINE_SRC,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': HIGHLIGHT_COLOR, 'line-width': 2.5, 'line-dasharray': [2, 1.5] },
+      });
+    }
+    if (!map.getSource(MEASURE_PT_SRC)) {
+      map.addSource(MEASURE_PT_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } as any });
+      map.addLayer({
+        id: MEASURE_PT_LAYER,
+        type: 'circle',
+        source: MEASURE_PT_SRC,
+        paint: { 'circle-radius': 4, 'circle-color': '#ffffff', 'circle-stroke-width': 2, 'circle-stroke-color': HIGHLIGHT_COLOR },
+      });
+    }
+  };
+
+  // Redraw the measure line/vertices GeoJSON from the committed points plus an
+  // optional provisional point (the live cursor), and update the total readout.
+  const redrawMeasure = (provisional?: [number, number]) => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    ensureMeasureLayers(map);
+    const pts = [...measurePointsRef.current, ...(provisional ? [provisional] : [])];
+    const lineSrc = map.getSource(MEASURE_LINE_SRC) as maplibregl.GeoJSONSource | undefined;
+    const ptSrc = map.getSource(MEASURE_PT_SRC) as maplibregl.GeoJSONSource | undefined;
+    if (lineSrc) {
+      lineSrc.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: pts.length >= 2 ? pts : [] }, properties: {} } as any);
+    }
+    if (ptSrc) {
+      ptSrc.setData({
+        type: 'FeatureCollection',
+        features: measurePointsRef.current.map((c) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: c }, properties: {} })),
+      } as any);
+    }
+    setMeasureMeters(pathLengthMeters(pts));
+  };
+
+  const clearMeasure = () => {
+    measurePointsRef.current = [];
+    redrawMeasure();
   };
 
   // --- Address search -------------------------------------------------------
@@ -1124,9 +1224,18 @@ export const VectormapPanel: React.FC<Props> = ({
     };
 
     const onClick = (e: maplibregl.MapMouseEvent) => {
-      // While the "Select area" tool is active, a click is part of drawing the
-      // box (handled by EFFECT 6) — don't open the single-feature popup.
+      // Measure mode: a click adds a vertex to the measured path.
+      if (measureModeRef.current) {
+        measurePointsRef.current = [...measurePointsRef.current, [e.lngLat.lng, e.lngLat.lat]];
+        redrawMeasure();
+        return;
+      }
+      // While a Select tool is active, a click either picks a feature (the 'click'
+      // tool) or is part of drawing a shape (handled by EFFECT 6) — no popup.
       if (selectModeRef.current) {
+        if (selectToolRef.current === 'click') {
+          toggleClickSelect(e.point);
+        }
         return;
       }
       const ids = ourLayerIds();
@@ -1184,6 +1293,15 @@ export const VectormapPanel: React.FC<Props> = ({
     };
 
     const onMove = (e: maplibregl.MapMouseEvent) => {
+      // Measure mode: crosshair + a provisional segment from the last vertex to the
+      // cursor (so the running total previews the next click).
+      if (measureModeRef.current) {
+        map.getCanvas().style.cursor = 'crosshair';
+        if (measurePointsRef.current.length > 0) {
+          redrawMeasure([e.lngLat.lng, e.lngLat.lat]);
+        }
+        return;
+      }
       // In select mode show a crosshair and skip the hover hit-test (the box
       // overlay owns the interaction).
       if (selectModeRef.current) {
@@ -1203,6 +1321,9 @@ export const VectormapPanel: React.FC<Props> = ({
       popupRef.current?.remove();
       popupRef.current = null;
     };
+    // Bound once; the handlers read live state via refs (selectModeRef, measureModeRef,
+    // selectToolRef, renderRef) and call ref-backed helpers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // EFFECT 6 — the "Select area" drawing tool (box OR lasso). Bound once (like
@@ -1216,9 +1337,9 @@ export const VectormapPanel: React.FC<Props> = ({
       return;
     }
 
-    // One SVG overlay drives both tools: a <polygon> that we feed 4 corners for a
-    // box, or the accumulated freehand points for a lasso. It's drawn imperatively
-    // (not via React) because a drag fires far faster than React state updates.
+    // One SVG overlay drives the drag tools: a filled <polygon> for box/lasso, and
+    // an open stroked <polyline> for the line/trace tools. Drawn imperatively (not
+    // via React) because a drag fires far faster than React state updates.
     const SVGNS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(SVGNS, 'svg');
     svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;display:none';
@@ -1227,15 +1348,21 @@ export const VectormapPanel: React.FC<Props> = ({
     shape.setAttribute('stroke', HIGHLIGHT_COLOR);
     shape.setAttribute('stroke-width', '1.5');
     shape.setAttribute('stroke-dasharray', '5 3');
+    const polyline = document.createElementNS(SVGNS, 'polyline');
+    polyline.setAttribute('fill', 'none');
+    polyline.setAttribute('stroke', HIGHLIGHT_COLOR);
+    polyline.setAttribute('stroke-width', '2.5');
+    polyline.setAttribute('stroke-dasharray', '5 3');
     svg.appendChild(shape);
+    svg.appendChild(polyline);
     container.appendChild(svg);
 
     let dragging = false;
-    let mode: 'box' | 'lasso' = 'box';
-    let start: [number, number] | null = null; // box: the first corner (canvas px)
-    let pts: Array<[number, number]> = []; // lasso: the freehand points (canvas px)
-    const TINY = 4; // px — a box drag smaller than this is treated as a stray click
-    const MIN_STEP = 3; // px — minimum spacing between recorded lasso points
+    let mode: SelectTool = 'box';
+    let start: [number, number] | null = null; // box/line: the first point (canvas px)
+    let pts: Array<[number, number]> = []; // lasso/trace: the freehand points (canvas px)
+    const TINY = 4; // px — a drag smaller than this is treated as a stray click
+    const MIN_STEP = 3; // px — minimum spacing between recorded freehand points
 
     // Re-enable the map's own drag handlers (called on release/cleanup).
     const enableMapDrag = () => {
@@ -1251,12 +1378,19 @@ export const VectormapPanel: React.FC<Props> = ({
       const r = map.getCanvas().getBoundingClientRect();
       return [ev.clientX - r.left, ev.clientY - r.top];
     };
-    const setPolygon = (arr: Array<[number, number]>) =>
-      shape.setAttribute('points', arr.map((p) => `${p[0]},${p[1]}`).join(' '));
+    const toPoints = (arr: Array<[number, number]>) => arr.map((p) => `${p[0]},${p[1]}`).join(' ');
+    const setPolygon = (arr: Array<[number, number]>) => {
+      shape.setAttribute('points', toPoints(arr));
+      polyline.setAttribute('points', ''); // hide the line element
+    };
+    const setPolyline = (arr: Array<[number, number]>) => {
+      polyline.setAttribute('points', toPoints(arr));
+      shape.setAttribute('points', ''); // hide the polygon element
+    };
 
     const onDown = (ev: MouseEvent) => {
-      if (!selectModeRef.current || ev.button !== 0) {
-        return; // only left-button drags while the tool is active
+      if (!selectModeRef.current || ev.button !== 0 || selectToolRef.current === 'click') {
+        return; // only left-button drags for the DRAWING tools ('click' isn't one)
       }
       dragging = true;
       mode = selectToolRef.current;
@@ -1267,9 +1401,14 @@ export const VectormapPanel: React.FC<Props> = ({
       if (mode === 'box') {
         start = p;
         setPolygon([p, p, p, p]);
-      } else {
+      } else if (mode === 'lasso') {
         pts = [p];
         setPolygon(pts);
+      } else {
+        // line (straight) / trace (freehand) — an open polyline.
+        start = p;
+        pts = [p];
+        setPolyline(pts);
       }
       svg.style.display = 'block';
       ev.preventDefault();
@@ -1288,6 +1427,14 @@ export const VectormapPanel: React.FC<Props> = ({
         if (!last || Math.abs(p[0] - last[0]) + Math.abs(p[1] - last[1]) >= MIN_STEP) {
           pts.push(p);
           setPolygon(pts);
+        }
+      } else if (mode === 'line' && start) {
+        setPolyline([start, p]); // straight: just start → cursor
+      } else if (mode === 'trace') {
+        const last = pts[pts.length - 1];
+        if (!last || Math.abs(p[0] - last[0]) + Math.abs(p[1] - last[1]) >= MIN_STEP) {
+          pts.push(p);
+          setPolyline(pts);
         }
       }
     };
@@ -1312,6 +1459,19 @@ export const VectormapPanel: React.FC<Props> = ({
         pts = [];
         if (poly.length >= 3) {
           runSelection({ kind: 'polygon', points: poly });
+        }
+      } else if (mode === 'line' && start) {
+        const s = start;
+        start = null;
+        if (Math.abs(p[0] - s[0]) < TINY && Math.abs(p[1] - s[1]) < TINY) {
+          return; // a click, not a line
+        }
+        runSelection({ kind: 'line', points: [s, p] });
+      } else if (mode === 'trace') {
+        const poly = pts;
+        pts = [];
+        if (poly.length >= 2) {
+          runSelection({ kind: 'line', points: poly });
         }
       }
     };
@@ -1428,6 +1588,52 @@ export const VectormapPanel: React.FC<Props> = ({
     });
   };
 
+  // Toggle the Select-area tool. Turning it on exits measure mode (mutually
+  // exclusive) and closes any single-feature popup.
+  const toggleSelectMode = () => {
+    setSelectMode((on) => {
+      const next = !on;
+      if (next) {
+        setMeasureMode(false);
+        popupRef.current?.remove();
+        popupRef.current = null;
+      }
+      return next;
+    });
+  };
+
+  // Toggle the Measure tool. Turning it on exits select mode; turning it off clears
+  // the drawn measurement.
+  const toggleMeasureMode = () => {
+    setMeasureMode((on) => {
+      const next = !on;
+      const map = mapRef.current;
+      if (next) {
+        setSelectMode(false);
+        map?.doubleClickZoom.disable(); // clicks add vertices; don't zoom on dblclick
+      } else {
+        clearMeasure();
+        map?.doubleClickZoom.enable();
+      }
+      return next;
+    });
+  };
+
+  // Escape clears the current measurement while measuring.
+  useEffect(() => {
+    if (!measureMode) {
+      return;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        clearMeasure();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [measureMode]);
+
   // Build the unified layer-control list: drawable tile layers plus all marker
   // layers, each normalized to { id, name, group, color }. The swatch color is
   // the geometry's paint color for tile layers, or the fixed color for markers.
@@ -1509,32 +1715,37 @@ export const VectormapPanel: React.FC<Props> = ({
           size="sm"
           variant={selectMode ? 'primary' : 'secondary'}
           icon="gf-show-context"
-          onClick={() => {
-            // Entering select mode: close any open single-feature popup so the two
-            // interactions don't visually conflict.
-            if (!selectMode) {
-              popupRef.current?.remove();
-              popupRef.current = null;
-            }
-            setSelectMode((m) => !m);
-          }}
-          title="Draw a shape on the map to list the features inside it"
+          onClick={toggleSelectMode}
+          title="Select features on the map (box, lasso, line, or click)"
         >
           {selectMode ? 'Selecting…' : 'Select area'}
         </Button>
         {selectMode && (
-          // Choose the drawing tool: a rectangle (Box) or a freehand outline
-          // (Lasso) for tracing an irregular run of plant.
-          <RadioButtonGroup<'box' | 'lasso'>
+          // Pick the selection tool: rectangle, freehand outline, a line (straight
+          // or traced) that selects what it crosses, or click to pick features.
+          <RadioButtonGroup<SelectTool>
             size="sm"
             value={selectTool}
             onChange={(v) => setSelectTool(v)}
             options={[
               { label: 'Box', value: 'box', description: 'Drag a rectangle' },
               { label: 'Lasso', value: 'lasso', description: 'Draw a freehand outline' },
+              { label: 'Line', value: 'line', description: 'Drag a straight line; selects what it crosses' },
+              { label: 'Trace', value: 'trace', description: 'Freehand a line along a run of plant' },
+              { label: 'Pick', value: 'click', description: 'Click features to add/remove them one at a time' },
             ]}
           />
         )}
+        <Button
+          size="sm"
+          variant={measureMode ? 'primary' : 'secondary'}
+          icon="calculator-alt"
+          onClick={toggleMeasureMode}
+          title="Measure distance along a path (click to add points; Esc/Clear to reset)"
+        >
+          {measureMode ? 'Measuring…' : 'Measure'}
+        </Button>
+        {measureMode && <MeasureReadout text={formatDistanceBoth(measureMeters)} onClear={clearMeasure} />}
       </div>
       {options.searchEnabled !== false && (
         <SearchBox
@@ -1571,6 +1782,7 @@ export const VectormapPanel: React.FC<Props> = ({
           onClose={() => {
             setSelection(null);
             clearSelectionHighlight();
+            clickSelectedRef.current.clear();
           }}
         />
       )}
