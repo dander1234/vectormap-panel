@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.10.1
+
+- Fix: raise the viewer basemap picker above MapLibre's bottom-right attribution
+  bar so the copyright text no longer overlaps it.
+
 ## 1.10.0
 
 - Feature: **label text formatting**. Each marker layer with label views now has
