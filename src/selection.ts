@@ -133,12 +133,13 @@ export const highlightTargetFor = (f: ClickedFeature | undefined | null): Highli
 // ---------------------------------------------------------------------------
 
 // What the user drew, expressed in SCREEN (pixel) space ready for MapLibre's
-// queryRenderedFeatures. Only 'box' is produced today; 'polygon' is reserved so
-// a future freehand mode can feed the exact same pipeline below (it would query
-// the polygon's bounding box then point-in-polygon filter — see runSelectionQuery).
+// queryRenderedFeatures. 'box' = a rectangle, 'polygon' = a closed lasso, 'line' =
+// an OPEN polyline (straight two-point or freehand trace) that selects features it
+// crosses or passes near.
 export type SelectionGeometry =
   | { kind: 'box'; p1: [number, number]; p2: [number, number] } // two opposite corner pixels
-  | { kind: 'polygon'; points: Array<[number, number]> }; // RESERVED for a later polygon mode
+  | { kind: 'polygon'; points: Array<[number, number]> } // closed lasso outline
+  | { kind: 'line'; points: Array<[number, number]> }; // open polyline
 
 // ---------------------------------------------------------------------------
 // Query results
@@ -289,6 +290,85 @@ const featureInLasso = (
   }
 };
 
+// --- Line (open polyline) select tests, all in SCREEN/pixel space ------------
+
+// Distance from point p to segment ab (pixels).
+const distPointToSegment = (p: Pt, a: Pt, b: Pt): number => {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len2 = dx * dx + dy * dy;
+  let t = len2 === 0 ? 0 : ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const cx = a[0] + t * dx;
+  const cy = a[1] + t * dy;
+  return Math.hypot(p[0] - cx, p[1] - cy);
+};
+
+// Is point pt within `buffer` px of the open polyline `line`?
+const pointNearLine = (pt: Pt, line: Pt[], buffer: number): boolean => {
+  for (let i = 0; i < line.length - 1; i++) {
+    if (distPointToSegment(pt, line[i], line[i + 1]) <= buffer) {
+      return true;
+    }
+  }
+  return false;
+};
+
+// Any vertex of `pts` within `buffer` px of the line?
+const anyVertexNearLine = (pts: Pt[], line: Pt[], buffer: number): boolean =>
+  pts.some((p) => pointNearLine(p, line, buffer));
+
+// Does any segment of `pts` cross any (open) segment of `line`? `closed` adds the
+// closing segment of `pts` (for polygon rings).
+const segmentsCrossPath = (pts: Pt[], line: Pt[], closed = false): boolean => {
+  const n = pts.length;
+  const last = closed ? n : n - 1;
+  for (let i = 0; i < last; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    for (let j = 0; j < line.length - 1; j++) {
+      if (segmentsIntersect(a, b, line[j], line[j + 1])) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+// Does this feature interact with the drawn line? Points match within `buffer` px;
+// lines/polygons match if any segment crosses the line or a vertex is near it.
+export const featureNearLine = (
+  geometry: { type: string; coordinates: any },
+  line: Pt[],
+  project: (coord: Pt) => Pt,
+  buffer: number
+): boolean => {
+  const testLine = (coords: Pt[]): boolean => {
+    const pts = coords.map(project);
+    return anyVertexNearLine(pts, line, buffer) || segmentsCrossPath(pts, line);
+  };
+  const testPolygon = (rings: Pt[][]): boolean => {
+    const outer = (rings[0] ?? []).map(project);
+    return anyVertexNearLine(outer, line, buffer) || segmentsCrossPath(outer, line, true);
+  };
+  switch (geometry.type) {
+    case 'Point':
+      return pointNearLine(project(geometry.coordinates as Pt), line, buffer);
+    case 'MultiPoint':
+      return (geometry.coordinates as Pt[]).some((c) => pointNearLine(project(c), line, buffer));
+    case 'LineString':
+      return testLine(geometry.coordinates as Pt[]);
+    case 'MultiLineString':
+      return (geometry.coordinates as Pt[][]).some(testLine);
+    case 'Polygon':
+      return testPolygon(geometry.coordinates as Pt[][]);
+    case 'MultiPolygon':
+      return (geometry.coordinates as Pt[][][]).some(testPolygon);
+    default:
+      return false;
+  }
+};
+
 // Compute the de-dup key for one feature within a layer. Vector tiles return the
 // SAME feature once per covering tile, so we must collapse those. When the
 // feature has a real id we key on it (+ sourceLayer); otherwise we fall back to a
@@ -296,7 +376,7 @@ const featureInLasso = (
 // genuinely distinct features that share identical displayed attributes —
 // promoting an id in the tile (or setting promoteId) is the robust fix; the
 // drawer surfaces this caveat in its hint.
-const dedupeKeyFor = (feature: RenderedFeature, filter: FieldFilterConfig): string => {
+export const dedupeKeyFor = (feature: RenderedFeature, filter: FieldFilterConfig): string => {
   if (feature.id !== undefined && feature.id !== null) {
     return `id:${String(feature.id)} ${feature.sourceLayer ?? ''}`;
   }
@@ -304,17 +384,25 @@ const dedupeKeyFor = (feature: RenderedFeature, filter: FieldFilterConfig): stri
   return `props:${title ?? ''} ${JSON.stringify(entries)}`;
 };
 
+// The bounding box (pixel space) of a set of points, for a first-pass
+// queryRenderedFeatures before refining to the exact polygon/line.
+const bboxOf = (points: Pt[]): [Pt, Pt] => {
+  const xs = points.map((p) => p[0]);
+  const ys = points.map((p) => p[1]);
+  return [
+    [Math.min(...xs), Math.min(...ys)],
+    [Math.max(...xs), Math.max(...ys)],
+  ];
+};
+
+// Pixels within which a point feature counts as "on" a drawn line.
+const LINE_SELECT_BUFFER_PX = 6;
+
 // Run a selection: query the drawn geometry across the target layers, drop tile
 // duplicates, group by layer, and cap each group. Pure aside from reading the
 // map's currently-rendered features.
 export const runSelectionQuery = (params: QueryParams): SelectionResult => {
   const { map, geometry, targets, maxPerLayer } = params;
-
-  // Map each MapLibre layer id back to its target so we can group + filter.
-  const byMapLayerId = new Map<string, SelectionTarget>();
-  for (const t of targets) {
-    byMapLayerId.set(t.mapLayerId, t);
-  }
   const layerIds = targets.map((t) => t.mapLayerId);
 
   // No selectable+visible layers → nothing to do.
@@ -322,33 +410,45 @@ export const runSelectionQuery = (params: QueryParams): SelectionResult => {
     return { groups: [], totalCount: 0, cappedAny: false };
   }
 
+  const project = (coord: Pt): Pt => {
+    const p = map.project(coord as any);
+    return [p.x, p.y];
+  };
+
   // Query the rendered features inside the shape. A box queries its pixel bbox
-  // directly. A lasso (polygon) queries the polygon's bounding box first — that's
-  // all MapLibre can do natively — then refines to the polygon by testing each
-  // candidate's projected geometry against it (so lines/plant segments that pass
-  // through the lasso are included, not just points).
+  // directly. A lasso/line queries the bounding box first (all MapLibre can do
+  // natively) then refines by testing each candidate's projected geometry, so
+  // lines/plant segments passing through are included — not just points.
   let raw: RenderedFeature[] = [];
   if (geometry.kind === 'box') {
     raw = map.queryRenderedFeatures([geometry.p1, geometry.p2], { layers: layerIds }) as unknown as RenderedFeature[];
-  } else {
+  } else if (geometry.kind === 'polygon') {
     const lasso = geometry.points;
     if (lasso.length < 3) {
       return { groups: [], totalCount: 0, cappedAny: false }; // not a polygon
     }
-    const xs = lasso.map((p) => p[0]);
-    const ys = lasso.map((p) => p[1]);
-    const bbox: [Pt, Pt] = [
-      [Math.min(...xs), Math.min(...ys)],
-      [Math.max(...xs), Math.max(...ys)],
-    ];
-    const candidates = map.queryRenderedFeatures(bbox, { layers: layerIds }) as unknown as RenderedFeature[];
-    const project = (coord: Pt): Pt => {
-      const p = map.project(coord as any);
-      return [p.x, p.y];
-    };
+    const candidates = map.queryRenderedFeatures(bboxOf(lasso), { layers: layerIds }) as unknown as RenderedFeature[];
     raw = candidates.filter((f) => f.geometry && featureInLasso(f.geometry, lasso, project));
+  } else {
+    const line = geometry.points;
+    if (line.length < 2) {
+      return { groups: [], totalCount: 0, cappedAny: false }; // not a line
+    }
+    const candidates = map.queryRenderedFeatures(bboxOf(line), { layers: layerIds }) as unknown as RenderedFeature[];
+    raw = candidates.filter((f) => f.geometry && featureNearLine(f.geometry, line, project, LINE_SELECT_BUFFER_PX));
   }
 
+  return buildSelectionResult(raw, targets, maxPerLayer);
+};
+
+// Group a raw list of rendered features (from a shape query OR accumulated by the
+// click-select tool) into the display result: de-dup per layer, cap, and keep
+// target order. The single source of truth for the SelectionResult shape.
+export const buildSelectionResult = (
+  raw: RenderedFeature[],
+  targets: SelectionTarget[],
+  maxPerLayer: number
+): SelectionResult => {
   // Accumulate per target, preserving target order for the output groups.
   const acc = new Map<string, { target: SelectionTarget; seen: Set<string>; features: SelectedFeature[]; total: number }>();
   for (const t of targets) {

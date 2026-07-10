@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.15.0
+
+- Feature: **ruler / measurement tool**. A **Measure** button; click points along a
+  route to get the running distance shown in **both imperial and metric** (ft/mi
+  and m/km), with a live segment to the cursor. Esc or Clear resets.
+- Feature: **line select tools**. Select area gains **Line** (drag a straight line)
+  and **Trace** (freehand) — both select features the line crosses or passes within
+  a few pixels of (good for a run of plant).
+- Feature: **click-select ("Pick")**. Click features one at a time to toggle them
+  in/out of a running selection — ideal for cherry-picking, e.g. offline ONTs
+  interspersed with others you don't want, for reporting. Copy/CSV export the
+  hand-picked set.
+
 ## 1.14.0
 
 - Feature: **vector tile line styles**. Line layers gain a **Line style** — solid,

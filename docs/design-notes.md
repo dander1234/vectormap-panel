@@ -179,17 +179,31 @@ self-hosted `style.json`). The design thinking for when we build it:
    inserted above them (and below labels if we want labels on top) via a
    `beforeId`.
 
-## Area selection (box + lasso)
+## Area selection (box / lasso / line / trace / pick)
 
 **Status: IMPLEMENTED.** A "Select area" tool returns a list of the features
-inside a drawn shape, across **opt-in layers** (each layer has a `selectable`
-flag; a layer must also be visible to be queried). Two draw modes share one
+inside/near a drawn shape, across **opt-in layers** (each layer has a `selectable`
+flag; a layer must also be visible to be queried). The draw modes share one
 pipeline:
 
 - **Box** — drag a rectangle; queried with `map.queryRenderedFeatures(bbox)`.
 - **Lasso** — freehand polygon; queried by its bounding box, then refined by
   testing each candidate's projected geometry against the polygon (see
   `featureInLasso` in `src/selection.ts`).
+- **Line** (straight, 2-point) and **Trace** (freehand open polyline) — both feed
+  `{ kind: 'line' }`; refined by `featureNearLine` (crossing via `segmentsIntersect`,
+  or a point within `LINE_SELECT_BUFFER_PX` of the line).
+- **Pick** — click-to-toggle: `toggleClickSelect` keeps an accumulating Map of
+  `{ target, feature }` keyed by `dedupeKeyFor`, rebuilding the result via the
+  shared `buildSelectionResult` on each click (so hand-picking, e.g. offline ONTs,
+  produces the same grouped result as a drawn shape). EFFECT 5's `onClick` routes to
+  it when the active tool is `click`.
+
+**Ruler / measurement** (`Measure` toolbar button, mutually exclusive with select):
+click points to build a path drawn as a **geo-anchored** GeoJSON line + vertices
+(so it stays put on pan/zoom); `src/measure.ts` (pure, tested) does haversine
+lengths and `formatDistanceBoth` (imperial + metric). A live provisional segment
+follows the cursor; Esc/Clear resets; double-click-zoom is disabled while active.
 
 Key design points:
 
@@ -201,9 +215,11 @@ Key design points:
   what's drawn at the current zoom/viewport. A future option could do a
   server-side spatial query (GeoServer WFS / SQL) for completeness regardless of
   viewport — deferred.
-- **Shared pipeline / seam.** `SelectionGeometry` is a union (`box` | `polygon`);
-  `runSelectionQuery` consumes either and produces grouped, de-duplicated results
-  (vector tiles repeat a feature per covering tile — deduped by id+sourceLayer).
+- **Shared pipeline / seam.** `SelectionGeometry` is a union (`box` | `polygon` |
+  `line`); `runSelectionQuery` gathers the raw features and `buildSelectionResult`
+  produces grouped, de-duplicated results (vector tiles repeat a feature per
+  covering tile — deduped by id+sourceLayer). Click-select reuses
+  `buildSelectionResult` directly.
   The same `selectTooltipFields` helper that builds the click popup picks the
   columns, so the results match each layer's tooltip config.
 - **Results window.** A floating, draggable, resizable window

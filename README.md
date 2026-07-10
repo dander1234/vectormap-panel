@@ -28,10 +28,13 @@ loads the tiles in view at the current zoom.
   **thresholds** / **regex** rules defined right on the layer.
 - **Unified on-map layer control** — show/hide and group both tile and marker
   layers from one box.
-- **Select area** — draw a **box** or freehand **lasso** to list every feature
-  inside it (lines/plant segments included when they cross the lasso, not just
-  points), across the layers you opt in per layer. Results show in a movable,
-  resizable window grouped by layer, with per-layer counts and **CSV export**.
+- **Select features** — a **box**, freehand **lasso**, a **line** (straight or
+  freehand **trace**) that selects what it crosses, or **Pick** (click features one
+  at a time to toggle them in/out — great for cherry-picking, e.g. offline units).
+  Opt in per layer; results show in a movable, resizable window grouped by layer,
+  with per-layer counts and **CSV export**.
+- **Measure** — a ruler tool: click a path to get the distance in **both imperial
+  and metric** (ft/mi and m/km), with a live segment to the cursor.
 - **Per-layer tooltips** — include/exclude fields by regex, hide empty values, a
   title field, and **templated links** (`${field}` placeholders from the clicked
   feature plus Grafana dashboard variables).
@@ -180,19 +183,29 @@ serves Noto Sans Regular/Bold/Italic. To use other typefaces, point *Point label
 → Glyph (font) server URL* at a self-hosted glyph server and set the layer's font
 family to match.
 
-### 5. Select an area
+### 5. Select features
 
-Click **Select area** (top-left), then choose **Box** or **Lasso**:
+Click **Select area** (top-left), then choose a tool:
 
 - **Box** — drag a rectangle.
 - **Lasso** — hold and trace a freehand outline; release to close it.
+- **Line** — drag a straight line; selects features it crosses or passes near.
+- **Trace** — freehand a line along a run of plant; same selection rule.
+- **Pick** — click features one at a time to toggle them in/out (cherry-pick, e.g.
+  offline units interspersed with others). Click again to remove.
 
-Everything inside is listed in a movable, resizable **results window**, grouped
-by layer with counts. Lines (e.g. plant segments) are included when they cross
-the lasso, not only when a vertex is inside. Use **Copy** / **CSV** to export the
+Selected features are listed in a movable, resizable **results window**, grouped
+by layer with counts. Lines (e.g. plant segments) are included when they cross the
+shape/line, not only when a vertex is inside. Use **Copy** / **CSV** to export the
 list (e.g. affected customers or plant). Each layer has a **Selectable** toggle in
 its options, so you can include some layers and exclude others; a layer must also
 be **visible** to be selected.
+
+### Measure distance
+
+Click **Measure**, then click points along a path. The readout shows the running
+distance in both **ft/mi** and **m/km**, with a live segment to the cursor. **Esc**
+or **Clear** resets; the line stays anchored as you pan/zoom.
 
 The results table honors each layer's configured **tooltip links**: a link whose
 URL references a single field (e.g. `…/equip/${equipment_id}`) makes that
