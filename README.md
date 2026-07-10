@@ -26,13 +26,17 @@ loads the tiles in view at the current zoom.
   splice closure, pole, splitter, …) plus general and geometric sets.
 - **Marker color modes** — fixed, by field (Grafana standard config), or explicit
   **thresholds** / **regex** rules defined right on the layer.
-- **Unified on-map layer control** — show/hide and group both tile and marker
-  layers from one box.
+- **Point label views** — switch a marker layer between its shape and a text label
+  from the data (e.g. address / account id) at view time, with configurable font
+  (style / family / size / color / halo).
+- **On-map layer control** for tile + marker layers — show/hide, **group show/hide**
+  (tri-state), **collapsible groups** (with a per-group default), a **drag-and-drop
+  organizer** to order categories and layers, and the per-layer label-view picker.
 - **Select features** — a **box**, freehand **lasso**, a **line** (straight or
   freehand **trace**) that selects what it crosses, or **Pick** (click features one
   at a time to toggle them in/out — great for cherry-picking, e.g. offline units).
   Opt in per layer; results show in a movable, resizable window grouped by layer,
-  with per-layer counts and **CSV export**.
+  with per-layer counts, **Copy** (a formatted table for email/chat), and **CSV**.
 - **Measure** — a ruler tool: click a path to get the distance in **both imperial
   and metric** (ft/mi and m/km), with a live segment to the cursor; **Hold** pins a
   measurement to the map.
@@ -46,7 +50,8 @@ loads the tiles in view at the current zoom.
   for addresses it can also fall back to a geocoder on demand (Nominatim by
   default, or a custom endpoint). Flies there, drops a pin, and opens a popup.
 - **Basemaps** — OpenStreetMap, CARTO light/dark, Esri satellite, blank, or a
-  custom XYZ raster URL.
+  custom XYZ raster URL, plus an optional **viewer basemap switcher** (a curated
+  list the user can switch between on the map).
 - **"Set initial view"** button to capture the current center/zoom into options.
 - **Grafana template-variable interpolation** in tile/basemap URLs and filters.
 
