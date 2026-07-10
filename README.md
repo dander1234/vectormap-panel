@@ -19,8 +19,9 @@ loads the tiles in view at the current zoom.
 - **Vector tile layers** (MVT/PBF) — tile URL, source layer, geometry/paint,
   optional MapLibre filter, and TMS/XYZ scheme (GeoServer GWC is TMS).
 - **Marker layers from query data** (any datasource — SQL, InfluxDB, …), bound
-  per query (`refId`), sized by a field, with selectable **shapes**: circle,
-  square, triangle, diamond, star, cross, hexagon.
+  per query (`refId`), sized by a field, with a **searchable icon library**
+  (~36 icons) including telecom/fiber symbols (handhole, vault, ONT, cabinet,
+  splice closure, pole, splitter, …) plus general and geometric sets.
 - **Marker color modes** — fixed, by field (Grafana standard config), or explicit
   **thresholds** / **regex** rules defined right on the layer.
 - **Unified on-map layer control** — show/hide and group both tile and marker
@@ -109,7 +110,8 @@ lat,lng,name,status
 Then **Marker layers (from data) → Add marker layer**:
 
 - **Lat/Lng fields** — set to `lat` / `lng`, or leave blank to auto-detect.
-- **Shape** — circle, square, triangle, diamond, star, cross, or hexagon.
+- **Marker icon** — click to open a searchable grid of ~36 icons (telecom/fiber,
+  general, geometric); search by name or keyword (e.g. `vault`, `ont`, `cabinet`).
 - **Color mode** — fixed, by field (Grafana standard config), or explicit
   **thresholds** / **regex** rules on a field (e.g. regex on `status`:
   `down` → red, `up` → green).
@@ -153,8 +155,9 @@ some are visible), and a **chevron** to collapse/expand the group's layers (clic
 the chevron or the group name).
 
 To arrange the control, use *Map view → **Organize layer menu***: drag to reorder
-the categories and the layers within each. This sets the menu's display order only
-— it doesn't change map draw order or which category a layer belongs to (that's the
+the categories and the layers within each, and tick a group's **Collapsed** box to
+have it start collapsed on load. This sets the menu's display/collapse state only —
+it doesn't change map draw order or which category a layer belongs to (that's the
 layer's Group field).
 
 A marker layer can also define **Point label views** in its options — each a name

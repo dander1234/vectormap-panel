@@ -9,9 +9,11 @@ import { GeocoderKind } from './geocode';
 // How a vector tile layer's features are drawn.
 export type GeometryType = 'line' | 'fill' | 'circle';
 
-// Point marker shapes. 'circle' renders as a native MapLibre circle layer; the
-// rest render as SDF symbol icons (see shapeIcons.ts). Used by marker layers.
-export type MarkerShape = 'circle' | 'square' | 'triangle' | 'diamond' | 'star' | 'cross' | 'hexagon';
+// Point marker icon id — one of the ids in the icon registry (src/icons.ts).
+// 'circle' renders as a native MapLibre circle layer; every other id renders as a
+// recolorable SDF symbol icon (see shapeIcons.ts). Kept as a string so the suite
+// can grow without a type change; the 7 original geometric ids still resolve.
+export type MarkerShape = string;
 
 // How a marker layer decides each point's color:
 //  - 'fixed'      : always the layer's fixed color.
@@ -67,6 +69,7 @@ export type BasemapKind = 'osm' | 'carto-light' | 'carto-dark' | 'satellite' | '
 export interface LayerOrder {
   groupOrder: string[]; // group names ('' = ungrouped) in display order
   itemOrder: string[]; // layer ids in display order (across both layer types)
+  collapsedGroups: string[]; // group names that start COLLAPSED on load (viewer can still expand)
 }
 
 // One entry in the viewer-facing basemap switcher. The admin curates a list of
@@ -218,7 +221,8 @@ export interface VectormapOptions {
   // server to use other typefaces (then set a layer's font family to match).
   glyphsUrl: string;
 
-  // Menu-only display order for the on-map layer control (drag-and-drop organizer).
+  // Menu-only display order + per-group collapsed-on-load state for the layer
+  // control (drag-and-drop organizer).
   layerOrder: LayerOrder;
 
   // The vector tile layers to render, top-most last.

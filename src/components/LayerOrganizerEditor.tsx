@@ -14,7 +14,7 @@
 
 import React, { useRef } from 'react';
 import { StandardEditorProps, GrafanaTheme2 } from '@grafana/data';
-import { Icon, useStyles2 } from '@grafana/ui';
+import { Checkbox, Icon, useStyles2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import { LayerOrder, VectormapOptions } from '../types';
 import { orderByKey } from '../layerControl';
@@ -66,29 +66,37 @@ export const LayerOrganizerEditor: React.FC<Props> = ({ value, onChange, context
     }
     g.items.push({ id: l.id, name: l.name });
   }
-  const order = value ?? { groupOrder: [], itemOrder: [] };
+  const order = value ?? { groupOrder: [], itemOrder: [], collapsedGroups: [] };
+  const collapsedGroups = order.collapsedGroups ?? [];
   const display = orderByKey(groups, (g) => g.name, order.groupOrder ?? []).map((g) => ({
     ...g,
     items: orderByKey(g.items, (i) => i.id, order.itemOrder ?? []),
   }));
 
-  // Persist a new tree as complete groupOrder + itemOrder arrays.
-  const commit = (next: Group[]) =>
+  // Persist a new tree (complete groupOrder + itemOrder) plus the collapsed set.
+  const write = (next: Group[], collapsed: string[]) =>
     onChange({
       groupOrder: next.map((g) => g.name),
       itemOrder: next.flatMap((g) => g.items.map((i) => i.id)),
+      collapsedGroups: collapsed,
     });
 
   const moveGroup = (from: number, to: number) => {
     if (from !== to) {
-      commit(arrayMove(display, from, to));
+      write(arrayMove(display, from, to), collapsedGroups);
     }
   };
   const moveItem = (groupName: string, from: number, to: number) => {
     if (from === to) {
       return;
     }
-    commit(display.map((g) => (g.name === groupName ? { ...g, items: arrayMove(g.items, from, to) } : g)));
+    write(display.map((g) => (g.name === groupName ? { ...g, items: arrayMove(g.items, from, to) } : g)), collapsedGroups);
+  };
+  const toggleCollapsed = (groupName: string) => {
+    const next = collapsedGroups.includes(groupName)
+      ? collapsedGroups.filter((n) => n !== groupName)
+      : [...collapsedGroups, groupName];
+    write(display, next);
   };
 
   const onGroupDrop = (targetIndex: number) => {
@@ -122,20 +130,29 @@ export const LayerOrganizerEditor: React.FC<Props> = ({ value, onChange, context
       </div>
       {display.map((group, gi) => (
         <div key={group.name || '_ungrouped'} className={styles.group}>
-          <div
-            className={styles.groupHeader}
-            draggable
-            onDragStart={(e) => {
-              dragRef.current = { type: 'group', index: gi };
-              e.dataTransfer.effectAllowed = 'move';
-              e.dataTransfer.setData('text/plain', group.name);
-            }}
-            onDragOver={allow}
-            onDrop={() => onGroupDrop(gi)}
-          >
-            <Icon name="draggabledots" className={styles.handle} />
-            <strong>{group.name || '(Ungrouped)'}</strong>
-            <span className={styles.count}>{group.items.length}</span>
+          <div className={styles.groupHeader} onDragOver={allow} onDrop={() => onGroupDrop(gi)}>
+            {/* Only the handle+name is draggable, so the checkbox click doesn't
+                start a drag. */}
+            <div
+              className={styles.groupHandle}
+              draggable
+              onDragStart={(e) => {
+                dragRef.current = { type: 'group', index: gi };
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', group.name);
+              }}
+            >
+              <Icon name="draggabledots" className={styles.handle} />
+              <strong>{group.name || '(Ungrouped)'}</strong>
+              <span className={styles.count}>{group.items.length}</span>
+            </div>
+            {group.name !== '' && (
+              <Checkbox
+                label="Collapsed"
+                value={collapsedGroups.includes(group.name)}
+                onChange={() => toggleCollapsed(group.name)}
+              />
+            )}
           </div>
           {group.items.map((item, ii) => (
             <div
@@ -179,11 +196,19 @@ const getStyles = (theme: GrafanaTheme2) => ({
   groupHeader: css({
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: theme.spacing(1),
     padding: theme.spacing(0.5),
-    cursor: 'grab',
     background: theme.colors.background.secondary,
     borderRadius: theme.shape.radius.default,
+  }),
+  groupHandle: css({
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    flex: 1,
+    minWidth: 0,
+    cursor: 'grab',
   }),
   count: css({ marginLeft: 'auto', color: theme.colors.text.secondary, fontSize: theme.typography.bodySmall.fontSize }),
   item: css({

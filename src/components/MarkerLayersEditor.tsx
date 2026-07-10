@@ -15,21 +15,14 @@ import { Button, ColorPicker, Field, Icon, Input, Select, Switch, useStyles2, us
 import { css } from '@emotion/css';
 import {
   MarkerLayerConfig,
-  MarkerShape,
   MarkerColorMode,
   MarkerLabelView,
   LabelFontStyle,
   createDefaultMarkerLayer,
 } from '../types';
-import { MARKER_SHAPES } from '../shapeIcons';
 import { TooltipLinksEditor } from './TooltipLinksEditor';
 import { ColorRulesEditor } from './ColorRulesEditor';
-
-// Shape dropdown options (label-cased from the shape ids).
-const SHAPE_OPTIONS: Array<SelectableValue<MarkerShape>> = MARKER_SHAPES.map((s) => ({
-  label: s.charAt(0).toUpperCase() + s.slice(1),
-  value: s,
-}));
+import { IconPicker } from './IconPicker';
 
 // Color-mode dropdown options.
 const COLOR_MODE_OPTIONS: Array<SelectableValue<MarkerColorMode>> = [
@@ -296,12 +289,11 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
               />
             </Field>
 
-            <Field label="Marker shape" description="Distinguish layers (e.g. square=handhole, triangle=vault, diamond=splice).">
-              <Select
-                options={SHAPE_OPTIONS}
-                value={layer.shape ?? 'circle'}
-                onChange={(v) => update(i, { shape: v.value ?? 'circle' })}
-              />
+            <Field
+              label="Marker icon"
+              description="Search the icon library (incl. telecom/fiber symbols) to distinguish layers."
+            >
+              <IconPicker value={layer.shape ?? 'circle'} onChange={(id) => update(i, { shape: id })} />
             </Field>
 
             <Field label="Color mode" description="How each point's color is decided.">

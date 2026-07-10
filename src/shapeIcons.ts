@@ -20,11 +20,7 @@
 
 import maplibregl from 'maplibre-gl';
 import { MarkerShape } from './types';
-
-// Shapes offered in the editor (circle is handled by a native circle layer, so
-// it's the implicit default and not strictly an "icon", but we list it for the
-// dropdown). Order is the dropdown order.
-export const MARKER_SHAPES: MarkerShape[] = ['circle', 'square', 'triangle', 'diamond', 'star', 'cross', 'hexagon'];
+import { iconById } from './icons';
 
 // --- Icon geometry constants -------------------------------------------------
 // The icon canvas is SIZE×SIZE; the shape is drawn inside, leaving BUFFER px of
@@ -46,6 +42,7 @@ export const iconIdForShape = (shape: MarkerShape): string => `vmshape-${shape}`
 
 // Register a shape's SDF image on the map once (no-op if already present). Safe to
 // call on every render; guarded by hasImage. 'circle' has no icon (native layer).
+// An unknown id falls back to the square silhouette so a marker never vanishes.
 export const ensureShapeIcon = (map: maplibregl.Map, shape: MarkerShape): void => {
   if (shape === 'circle') {
     return;
@@ -54,7 +51,11 @@ export const ensureShapeIcon = (map: maplibregl.Map, shape: MarkerShape): void =
   if (map.hasImage(id)) {
     return;
   }
-  const img = makeShapeSDF(shape);
+  const icon = iconById(shape) ?? iconById('square');
+  if (!icon) {
+    return;
+  }
+  const img = makeIconSDF(icon.path, icon.fillRule ?? 'nonzero');
   if (img) {
     // sdf:true tells MapLibre the alpha channel is a distance field, enabling
     // icon-color / icon-halo recoloring.
@@ -62,96 +63,32 @@ export const ensureShapeIcon = (map: maplibregl.Map, shape: MarkerShape): void =
   }
 };
 
-// --- Shape rasterization -----------------------------------------------------
-// Trace a shape's outline (centered, radius r) onto the 2D context as a path.
-const tracePath = (ctx: CanvasRenderingContext2D, shape: MarkerShape, cx: number, cy: number, r: number): void => {
-  ctx.beginPath();
-  switch (shape) {
-    case 'square': {
-      ctx.rect(cx - r, cy - r, r * 2, r * 2);
-      break;
-    }
-    case 'triangle': {
-      // Equilateral, point up. Vertices at -90°, 30°, 150°.
-      polygon(ctx, cx, cy, r, 3, -Math.PI / 2);
-      break;
-    }
-    case 'diamond': {
-      // Square rotated 45° (points up/right/down/left).
-      polygon(ctx, cx, cy, r, 4, -Math.PI / 2);
-      break;
-    }
-    case 'hexagon': {
-      polygon(ctx, cx, cy, r, 6, -Math.PI / 2);
-      break;
-    }
-    case 'star': {
-      star(ctx, cx, cy, r, r * 0.45, 5, -Math.PI / 2);
-      break;
-    }
-    case 'cross': {
-      // A plus sign: a vertical and a horizontal bar (arm thickness = r).
-      const t = r * 0.5; // half arm thickness
-      ctx.rect(cx - t, cy - r, t * 2, r * 2);
-      ctx.rect(cx - r, cy - t, r * 2, t * 2);
-      break;
-    }
-    default:
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  }
-  ctx.closePath();
-};
-
-// Regular n-gon path (vertices on a circle of radius r, first vertex at startAngle).
-const polygon = (
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  r: number,
-  n: number,
-  startAngle: number
-): void => {
-  for (let i = 0; i < n; i++) {
-    const a = startAngle + (i * 2 * Math.PI) / n;
-    const x = cx + r * Math.cos(a);
-    const y = cy + r * Math.sin(a);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  }
-};
-
-// k-pointed star path alternating outer radius rOuter and inner radius rInner.
-const star = (
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  rOuter: number,
-  rInner: number,
-  points: number,
-  startAngle: number
-): void => {
-  for (let i = 0; i < points * 2; i++) {
-    const r = i % 2 === 0 ? rOuter : rInner;
-    const a = startAngle + (i * Math.PI) / points;
-    const x = cx + r * Math.cos(a);
-    const y = cy + r * Math.sin(a);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  }
-};
-
-// Rasterize a shape and convert it to an RGBA SDF image (alpha = distance field,
-// RGB white). Returns null if a 2D canvas isn't available.
-const makeShapeSDF = (shape: MarkerShape): { width: number; height: number; data: Uint8ClampedArray } | null => {
+// --- Icon rasterization ------------------------------------------------------
+// Rasterize a registry icon's SVG path (authored in a 24×24 box) to an RGBA SDF
+// image (alpha = distance field, RGB white). The path is scaled to the shape's
+// EFFECTIVE span and centered in the SIZE canvas via a transform. Returns null if
+// a 2D canvas isn't available (e.g. server-side / tests — the map only runs in the
+// browser). `Path2D` accepts SVG path data directly.
+const makeIconSDF = (
+  svgPath: string,
+  fillRule: 'nonzero' | 'evenodd'
+): { width: number; height: number; data: Uint8ClampedArray } | null => {
   const canvas = document.createElement('canvas');
   canvas.width = SIZE;
   canvas.height = SIZE;
   const ctx = canvas.getContext('2d');
-  if (!ctx) {
+  if (!ctx || typeof Path2D === 'undefined') {
     return null;
   }
   ctx.clearRect(0, 0, SIZE, SIZE);
   ctx.fillStyle = '#ffffff';
-  tracePath(ctx, shape, SIZE / 2, SIZE / 2, SHAPE_ICON_EFFECTIVE / 2);
-  ctx.fill();
+  // Map the 24-unit viewBox onto the EFFECTIVE span, offset by BUFFER so it's
+  // centered with room for the distance field.
+  ctx.save();
+  ctx.translate(BUFFER, BUFFER);
+  ctx.scale(SHAPE_ICON_EFFECTIVE / 24, SHAPE_ICON_EFFECTIVE / 24);
+  ctx.fill(new Path2D(svgPath), fillRule);
+  ctx.restore();
 
   const alpha = ctx.getImageData(0, 0, SIZE, SIZE).data; // RGBA; we read .a
 

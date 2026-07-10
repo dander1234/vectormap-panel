@@ -50,8 +50,8 @@ export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanel
         path: 'layerOrder',
         name: 'Organize layer menu',
         description:
-          'Drag to reorder the layer control: reorder categories and reorder layers within a category. Affects the menu order only (not map draw order or category membership).',
-        defaultValue: { groupOrder: [], itemOrder: [] },
+          'Drag to reorder the layer control (categories and layers within a category), and tick a group to start it collapsed on load. Affects the menu only — not map draw order or category membership.',
+        defaultValue: { groupOrder: [], itemOrder: [], collapsedGroups: [] },
         editor: LayerOrganizerEditor,
         category: VIEW,
       })

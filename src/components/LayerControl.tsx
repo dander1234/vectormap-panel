@@ -13,6 +13,7 @@ import { Icon, Select, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import { MarkerShape, MarkerLabelView, LayerOrder } from '../types';
 import { groupCheckState, orderByKey } from '../layerControl';
+import { iconById } from '../icons';
 
 // Icon drawn next to a layer in the legend. Marker layers use their MarkerShape
 // so the legend matches the map; vector tile layers use 'line' (a bar) or a
@@ -32,79 +33,25 @@ export interface ControlLayer {
 }
 
 // --- Legend icon -----------------------------------------------------------
-// SVG points for a regular n-gon (first vertex at startDeg; -90 = pointing up).
-const polyPoints = (n: number, startDeg: number, r: number, cx = 8, cy = 8): string =>
-  Array.from({ length: n }, (_, i) => {
-    const a = ((startDeg + (i * 360) / n) * Math.PI) / 180;
-    return `${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`;
-  }).join(' ');
-
-// SVG points for a 5-point star.
-const starPoints = (cx = 8, cy = 8, ro = 7, ri = 3): string =>
-  Array.from({ length: 10 }, (_, i) => {
-    const r = i % 2 ? ri : ro;
-    const a = ((-90 + i * 36) * Math.PI) / 180;
-    return `${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`;
-  }).join(' ');
-
-// A small SVG icon matching the shape drawn on the map, filled with the layer's
-// color. This is what makes the legend match the markers (the bug fix).
+// A small SVG matching what's drawn on the map, filled with the layer's color, so
+// the legend and markers agree. Marker layers render their registry icon; tile
+// layers pass 'line' (a bar) for line geometry. Everything else resolves through
+// the icon registry (unknown → circle).
 const ShapeSwatch: React.FC<{ shape: LegendShape; color: string }> = ({ shape, color }) => {
-  const common = { width: 14, height: 14, viewBox: '0 0 16 16', style: { flexShrink: 0, display: 'block' } };
-  switch (shape) {
-    case 'square':
-      return (
-        <svg {...common}>
-          <rect x="2" y="2" width="12" height="12" rx="1" fill={color} />
-        </svg>
-      );
-    case 'triangle':
-      return (
-        <svg {...common}>
-          <polygon points={polyPoints(3, -90, 7.5)} fill={color} />
-        </svg>
-      );
-    case 'diamond':
-      return (
-        <svg {...common}>
-          <polygon points={polyPoints(4, -90, 7)} fill={color} />
-        </svg>
-      );
-    case 'hexagon':
-      return (
-        <svg {...common}>
-          <polygon points={polyPoints(6, -90, 7)} fill={color} />
-        </svg>
-      );
-    case 'star':
-      return (
-        <svg {...common}>
-          <polygon points={starPoints()} fill={color} />
-        </svg>
-      );
-    case 'cross':
-      return (
-        <svg {...common}>
-          <polygon
-            points="5.6,1.5 10.4,1.5 10.4,5.6 14.5,5.6 14.5,10.4 10.4,10.4 10.4,14.5 5.6,14.5 5.6,10.4 1.5,10.4 1.5,5.6 5.6,5.6"
-            fill={color}
-          />
-        </svg>
-      );
-    case 'line':
-      return (
-        <svg {...common}>
-          <rect x="1" y="6.5" width="14" height="3" rx="1.5" fill={color} />
-        </svg>
-      );
-    case 'circle':
-    default:
-      return (
-        <svg {...common}>
-          <circle cx="8" cy="8" r="6.5" fill={color} />
-        </svg>
-      );
+  const common = { width: 14, height: 14, viewBox: '0 0 24 24', style: { flexShrink: 0, display: 'block' } };
+  if (shape === 'line') {
+    return (
+      <svg {...common}>
+        <rect x="1" y="10" width="22" height="4" rx="2" fill={color} />
+      </svg>
+    );
   }
+  const icon = iconById(shape) ?? iconById('circle')!;
+  return (
+    <svg {...common}>
+      <path d={icon.path} fill={color} fillRule={icon.fillRule ?? 'nonzero'} />
+    </svg>
+  );
 };
 
 // Options for a layer's label-view Select: the implicit "Markers" (dot-only)
@@ -145,7 +92,8 @@ interface Props {
   // Active label view per marker layer id ('' / missing = "Markers" = dot only).
   activeLabelView: Record<string, string>;
   onSelectLabelView: (layerId: string, viewName: string) => void;
-  // Menu-only display order (from the drag-and-drop organizer). Empty = first-seen.
+  // Menu-only display order + per-group collapsed-on-load names (from the
+  // organizer). Empty = first-seen order, all expanded.
   layerOrder: LayerOrder;
 }
 
@@ -160,9 +108,13 @@ export const LayerControl: React.FC<Props> = ({
 }) => {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
-  // Which named groups are collapsed (runtime UI state; default expanded).
+  // Explicit per-group collapse overrides (runtime UI state). A group with no
+  // entry follows the configured collapsed-on-load set; toggling flips the
+  // effective state.
+  const collapsedDefault = layerOrder?.collapsedGroups ?? [];
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const toggleCollapsed = (name: string) => setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
+  const toggleCollapsed = (name: string) =>
+    setCollapsed((prev) => ({ ...prev, [name]: !(prev[name] ?? collapsedDefault.includes(name)) }));
 
   if (layers.length === 0) {
     return null;
@@ -193,8 +145,8 @@ export const LayerControl: React.FC<Props> = ({
       <div className={styles.title}>Layers</div>
       {orderedGroups.map((group) => {
         // Named groups collapse; the ungrouped ('') bucket has no heading and is
-        // always shown.
-        const isCollapsed = !!group.name && collapsed[group.name];
+        // always shown. Unset groups follow the configured collapsed-on-load set.
+        const isCollapsed = !!group.name && (collapsed[group.name] ?? collapsedDefault.includes(group.name));
         return (
         <div key={group.name || '_ungrouped'} className={styles.group}>
           {group.name && (
