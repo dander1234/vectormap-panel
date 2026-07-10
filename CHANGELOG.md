@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.17.0
+
+- Feature: **hold a measurement**. The ruler's readout gains a **Hold** button that
+  pins the current measured path (with its distance label) to the map so it stays
+  visible while you select or do other things. Hold several; a toolbar chip shows
+  the count with a clear button. Session-only (cleared on reload).
+- Feature: **temp markers (Annotations layer)**. An **Add marker** tool lets you
+  drop markers on the map, each with a **name, note, color, and icon** (from the
+  icon library). They render in a new **Annotations** entry in the layer control
+  (toggle/collapse like any layer); clicking a marker shows its note. The editor
+  panel is resizable. Session-only.
+
 ## 1.16.0
 
 - Feature: the selection window's **Copy** button now copies a **formatted table**

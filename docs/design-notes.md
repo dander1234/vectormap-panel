@@ -204,6 +204,20 @@ click points to build a path drawn as a **geo-anchored** GeoJSON line + vertices
 (so it stays put on pan/zoom); `src/measure.ts` (pure, tested) does haversine
 lengths and `formatDistanceBoth` (imperial + metric). A live provisional segment
 follows the cursor; Esc/Clear resets; double-click-zoom is disabled while active.
+**Hold** pins the current path into `heldMeasurements` (session state) drawn on a
+persistent `measure-held` source.
+
+**Session overlays (held measurements + temp markers).** Both live in runtime state
+(not saved to options). Their GeoJSON sources/layers are created **lazily on top**
+of the stack the first time they're used (so they're never buried), gated on a
+durable `mapLoadedRef` (set on the map's initial `load`) and drawn via `setData`
+directly — deliberately NOT `map.isStyleLoaded()`/`once('load')`, which flips false
+during data updates and can queue a draw onto a `load` event that never fires again.
+`pinOverlaysOnTop` re-raises them after any tile/marker re-apply. Temp markers
+(`Annotation { id,lng,lat,name,note,color,icon }`, edited via `AnnotationEditor`)
+render as one symbol layer (`icon-image`/`icon-color`/`text-field` all data-driven,
+icons registered via `ensureShapeIcon`) and appear as a synthetic **Annotations**
+entry in the layer control.
 
 Key design points:
 

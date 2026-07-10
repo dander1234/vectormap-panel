@@ -34,7 +34,10 @@ loads the tiles in view at the current zoom.
   Opt in per layer; results show in a movable, resizable window grouped by layer,
   with per-layer counts and **CSV export**.
 - **Measure** — a ruler tool: click a path to get the distance in **both imperial
-  and metric** (ft/mi and m/km), with a live segment to the cursor.
+  and metric** (ft/mi and m/km), with a live segment to the cursor; **Hold** pins a
+  measurement to the map.
+- **Temp markers** — drop on-map annotation markers (name, note, color, icon) in a
+  session-only **Annotations** layer; click one to read its note.
 - **Per-layer tooltips** — include/exclude fields by regex, hide empty values, a
   title field, and **templated links** (`${field}` placeholders from the clicked
   feature plus Grafana dashboard variables).
@@ -206,7 +209,17 @@ be **visible** to be selected.
 
 Click **Measure**, then click points along a path. The readout shows the running
 distance in both **ft/mi** and **m/km**, with a live segment to the cursor. **Esc**
-or **Clear** resets; the line stays anchored as you pan/zoom.
+or **Clear** resets; the line stays anchored as you pan/zoom. **Hold** pins the
+current measurement to the map so it stays while you do other things (a toolbar chip
+clears held ones).
+
+### Temp markers
+
+Click **Add marker**, then click the map to drop a marker. In the (resizable)
+**Markers** panel set its **name**, **note**, **color**, and **icon**. Markers show
+in an **Annotations** entry in the layer control (toggle like any layer); clicking a
+marker shows its note. Markers and held measurements are **session-only** (cleared
+on reload).
 
 The results table honors each layer's configured **tooltip links**: a link whose
 URL references a single field (e.g. `…/equip/${equipment_id}`) makes that
