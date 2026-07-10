@@ -71,6 +71,15 @@ const mkSourceIdFor = (id: string) => MK_SOURCE_PREFIX + id;
 const mkLayerIdFor = (id: string) => MK_LAYER_PREFIX + id;
 const mkLabelIdFor = (id: string) => MK_LABEL_PREFIX + id;
 
+// line-dasharray patterns (in line-width units) for each tile line style. 'solid'
+// omits the property. 'dotted'/'dashdot' rely on the round line-cap for the dots.
+const LINE_DASH: Record<string, number[] | undefined> = {
+  solid: undefined,
+  dashed: [2, 2],
+  dotted: [0, 2],
+  dashdot: [3, 1.5, 0, 1.5],
+};
+
 // Default glyph (font) endpoint — MapLibre's font server, which serves Noto Sans
 // in Regular/Bold/Italic. Used when the panel's glyphsUrl option is blank.
 // (fonts.openmaptiles.org was retired to an HTML landing page — do not use it.)
@@ -845,30 +854,63 @@ export const VectormapPanel: React.FC<Props> = ({
               },
             });
           } else if (layer.geometryType === 'circle') {
-            map.addLayer({
-              id: lId,
-              type: 'circle',
-              source: sId,
-              'source-layer': layer.sourceLayer,
-              layout: { visibility: vis },
-              paint: {
-                'circle-color': whenHighlighted(HIGHLIGHT_COLOR, circleColor),
-                'circle-radius': whenHighlighted(circleRadius + 3, circleRadius),
-                'circle-stroke-width': 1,
-                'circle-stroke-color': '#ffffff',
-              },
-            });
+            // A registry icon (SDF symbol, recolorable) if one is set, else a
+            // plain native circle. Mirrors the marker-layer circle-vs-symbol split.
+            const useIcon = layer.icon && layer.icon !== 'circle';
+            if (useIcon) {
+              ensureShapeIcon(map, layer.icon);
+              map.addLayer({
+                id: lId,
+                type: 'symbol',
+                source: sId,
+                'source-layer': layer.sourceLayer,
+                layout: {
+                  visibility: vis,
+                  'icon-image': iconIdForShape(layer.icon),
+                  // circleRadius is the icon "radius"; scale the SDF so its diameter
+                  // matches a circle of that radius.
+                  'icon-size': (2 * circleRadius) / SHAPE_ICON_EFFECTIVE,
+                  'icon-allow-overlap': true,
+                  'icon-ignore-placement': true,
+                },
+                paint: {
+                  'icon-color': whenHighlighted(HIGHLIGHT_COLOR, circleColor),
+                  'icon-halo-color': '#ffffff',
+                  'icon-halo-width': whenHighlighted(2.5, 1),
+                },
+              });
+            } else {
+              map.addLayer({
+                id: lId,
+                type: 'circle',
+                source: sId,
+                'source-layer': layer.sourceLayer,
+                layout: { visibility: vis },
+                paint: {
+                  'circle-color': whenHighlighted(HIGHLIGHT_COLOR, circleColor),
+                  'circle-radius': whenHighlighted(circleRadius + 3, circleRadius),
+                  'circle-stroke-width': 1,
+                  'circle-stroke-color': '#ffffff',
+                },
+              });
+            }
           } else {
+            // Line geometry: optional dash pattern (solid omits line-dasharray).
+            const dash = LINE_DASH[layer.lineStyle ?? 'solid'];
+            const linePaint: Record<string, unknown> = {
+              'line-color': whenHighlighted(HIGHLIGHT_COLOR, lineColor),
+              'line-width': whenHighlighted(lineWidth + 3, lineWidth),
+            };
+            if (dash) {
+              linePaint['line-dasharray'] = dash;
+            }
             map.addLayer({
               id: lId,
               type: 'line',
               source: sId,
               'source-layer': layer.sourceLayer,
               layout: { visibility: vis, 'line-cap': 'round', 'line-join': 'round' },
-              paint: {
-                'line-color': whenHighlighted(HIGHLIGHT_COLOR, lineColor),
-                'line-width': whenHighlighted(lineWidth + 3, lineWidth),
-              },
+              paint: linePaint,
             });
           }
 
@@ -1396,8 +1438,15 @@ export const VectormapPanel: React.FC<Props> = ({
         id: l.id,
         name: l.name,
         group: l.group,
-        // Legend icon matches the geometry: line=bar, fill=square, circle=dot.
-        shape: (l.geometryType === 'fill' ? 'square' : l.geometryType === 'circle' ? 'circle' : 'line') as LegendShape,
+        // Legend icon matches the geometry: line=bar, fill=square, circle=dot (or
+        // the layer's chosen icon for a circle layer).
+        shape: (l.geometryType === 'fill'
+          ? 'square'
+          : l.geometryType === 'circle'
+            ? l.icon && l.icon !== 'circle'
+              ? l.icon
+              : 'circle'
+            : 'line') as LegendShape,
         color:
           l.geometryType === 'fill'
             ? l.fillColor || '#3388ff'
@@ -1430,7 +1479,24 @@ export const VectormapPanel: React.FC<Props> = ({
       style={{ width, height, position: 'relative', overflow: 'hidden' }}
     >
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
-      <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 1, display: 'flex', gap: 8 }}>
+      {/* Opaque chrome so the tools stay legible over any basemap (light or dark)
+          — the raw secondary buttons blend into pale basemaps otherwise. */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 8,
+          left: 8,
+          zIndex: 1,
+          display: 'flex',
+          gap: 8,
+          alignItems: 'center',
+          background: theme.colors.background.primary,
+          border: `1px solid ${theme.colors.border.weak}`,
+          borderRadius: theme.shape.radius.default,
+          padding: 4,
+          boxShadow: theme.shadows.z2,
+        }}
+      >
         <Button
           size="sm"
           variant="secondary"

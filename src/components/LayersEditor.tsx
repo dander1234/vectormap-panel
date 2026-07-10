@@ -9,8 +9,9 @@ import React, { useState } from 'react';
 import { StandardEditorProps, SelectableValue, GrafanaTheme2 } from '@grafana/data';
 import { Button, ColorPicker, Field, Icon, Input, Select, Switch, useStyles2 } from '@grafana/ui';
 import { css } from '@emotion/css';
-import { VectorTileLayerConfig, GeometryType, TileScheme, createDefaultLayer } from '../types';
+import { VectorTileLayerConfig, GeometryType, TileScheme, LineStyle, createDefaultLayer } from '../types';
 import { TooltipLinksEditor } from './TooltipLinksEditor';
+import { IconPicker } from './IconPicker';
 
 const SCHEME_OPTIONS: Array<SelectableValue<TileScheme>> = [
   { label: 'XYZ', value: 'xyz' },
@@ -20,6 +21,12 @@ const GEOMETRY_OPTIONS: Array<SelectableValue<GeometryType>> = [
   { label: 'Line', value: 'line' },
   { label: 'Fill', value: 'fill' },
   { label: 'Circle', value: 'circle' },
+];
+const LINE_STYLE_OPTIONS: Array<SelectableValue<LineStyle>> = [
+  { label: 'Solid', value: 'solid' },
+  { label: 'Dashed', value: 'dashed' },
+  { label: 'Dotted', value: 'dotted' },
+  { label: 'Dash-dot', value: 'dashdot' },
 ];
 
 // Read a number out of a numeric <input>, falling back if blank/NaN.
@@ -143,6 +150,13 @@ export const LayersEditor: React.FC<Props> = ({ value, onChange }) => {
                   onChange={(e) => update(i, { lineWidth: numFrom(e, 2) })}
                 />
               </Field>
+              <Field label="Line style" description="Distinguish attributes, e.g. underground (dashed) vs overhead (solid). Pair with a filter.">
+                <Select
+                  options={LINE_STYLE_OPTIONS}
+                  value={layer.lineStyle ?? 'solid'}
+                  onChange={(v) => update(i, { lineStyle: v.value ?? 'solid' })}
+                />
+              </Field>
             </>
           )}
           {layer.geometryType === 'fill' && (
@@ -174,6 +188,9 @@ export const LayersEditor: React.FC<Props> = ({ value, onChange }) => {
                   value={layer.circleRadius}
                   onChange={(e) => update(i, { circleRadius: numFrom(e, 5) })}
                 />
+              </Field>
+              <Field label="Icon" description="Draw a recolorable icon (incl. telecom/fiber) instead of a plain dot.">
+                <IconPicker value={layer.icon || 'circle'} onChange={(id) => update(i, { icon: id })} />
               </Field>
             </>
           )}
