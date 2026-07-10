@@ -70,6 +70,20 @@ const MK_LABEL_PREFIX = 'mk-label-';
 const mkSourceIdFor = (id: string) => MK_SOURCE_PREFIX + id;
 const mkLayerIdFor = (id: string) => MK_LAYER_PREFIX + id;
 const mkLabelIdFor = (id: string) => MK_LABEL_PREFIX + id;
+
+// Default glyph (font) endpoint — MapLibre's font server, which serves Noto Sans
+// in Regular/Bold/Italic. Used when the panel's glyphsUrl option is blank.
+// (fonts.openmaptiles.org was retired to an HTML landing page — do not use it.)
+const DEFAULT_GLYPHS = 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf';
+
+// Compose a MapLibre `text-font` stack from a family + style. Blank family →
+// 'Noto Sans' (the default server's family). The resulting name (e.g.
+// 'Noto Sans Bold') must be served by the active glyph endpoint or no text draws.
+const STYLE_WORD: Record<string, string> = { regular: 'Regular', bold: 'Bold', italic: 'Italic' };
+const labelFont = (family: string, style: string): [string] => {
+  const fam = (family || 'Noto Sans').trim();
+  return [`${fam} ${STYLE_WORD[style] ?? 'Regular'}`];
+};
 const LAT_NAMES = ['latitude', 'lat', 'y'];
 const LNG_NAMES = ['longitude', 'long', 'lng', 'lon', 'x'];
 
@@ -657,13 +671,11 @@ export const VectormapPanel: React.FC<Props> = ({
       style: {
         version: 8,
         // Glyph (font) endpoint — REQUIRED for any text label (the marker "label
-        // views" feature). Uses MapLibre's font server (serves a real `Noto Sans
-        // Regular` PBF), the same kind of external dependency as the basemap
-        // tiles. If it's unreachable, labels simply don't render; the rest of the
-        // map is unaffected. Swappable for a self-hosted glyph server.
-        // (NOTE: fonts.openmaptiles.org was retired to an HTML landing page and no
-        // longer serves fonts — do not use it.)
-        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+        // views" feature). Defaults to MapLibre's font server; the panel's
+        // glyphsUrl option can point at a self-hosted server (kept live via
+        // map.setGlyphs in EFFECT G). If unreachable, labels just don't render;
+        // the rest of the map is unaffected.
+        glyphs: options.glyphsUrl || DEFAULT_GLYPHS,
         sources: {},
         layers: [{ id: 'bg', type: 'background', paint: { 'background-color': theme.colors.background.secondary } }],
       },
@@ -679,6 +691,26 @@ export const VectormapPanel: React.FC<Props> = ({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // EFFECT G — keep the glyph (font) server in sync with the option. setGlyphs
+  // re-fetches fonts and re-renders label layers, so changing the URL applies
+  // live (no map recreation). Waits for the style if it isn't loaded yet.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    const url = options.glyphsUrl || DEFAULT_GLYPHS;
+    const apply = () => map.setGlyphs(url);
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once('load', apply);
+    }
+    return () => {
+      map.off('load', apply);
+    };
+  }, [options.glyphsUrl]);
 
   // Resolve the EFFECTIVE basemap: when the admin curated a switcher list, the
   // viewer-selected choice wins (first entry is the default); otherwise the single
@@ -992,7 +1024,6 @@ export const VectormapPanel: React.FC<Props> = ({
             source: sId,
             layout: {
               'text-field': '',
-              'text-font': ['Noto Sans Regular'], // available on the glyphs CDN above
               'text-anchor': 'left',
               'text-offset': [0.8, 0], // sit just right of the dot
               'text-allow-overlap': false, // declutter: drop colliding labels
@@ -1007,6 +1038,7 @@ export const VectormapPanel: React.FC<Props> = ({
         const haloColor = cfg.labelHaloColor
           ? theme.visualization.getColorByName(cfg.labelHaloColor)
           : theme.colors.background.primary;
+        map.setLayoutProperty(labelId, 'text-font', labelFont(cfg.labelFontFamily, cfg.labelFontStyle ?? 'regular'));
         map.setLayoutProperty(labelId, 'text-size', cfg.labelTextSize || 12);
         map.setPaintProperty(labelId, 'text-color', labelColor);
         map.setPaintProperty(labelId, 'text-halo-color', haloColor);

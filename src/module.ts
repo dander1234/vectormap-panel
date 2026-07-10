@@ -14,6 +14,7 @@ import { BasemapChoicesEditor } from './components/BasemapChoicesEditor';
 const VIEW = ['Map view'];
 const BASEMAP = ['Basemap'];
 const SEARCH = ['Address search'];
+const LABELS = ['Point labels'];
 
 export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanelOptions((builder) => {
   return (
@@ -119,6 +120,16 @@ export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanel
         settings: { placeholder: 'Search address or ID…' },
         category: SEARCH,
         showIf: (opts) => opts.searchEnabled !== false,
+      })
+      // --- Point labels ---
+      .addTextInput({
+        path: 'glyphsUrl',
+        name: 'Glyph (font) server URL',
+        description:
+          'MapLibre glyph template with {fontstack}/{range} for label text. Blank = built-in default (serves Noto Sans Regular/Bold/Italic). Point at a self-hosted glyph server to use other fonts, then set a marker layer\'s label font family to match.',
+        defaultValue: '',
+        settings: { placeholder: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf' },
+        category: LABELS,
       })
       // --- Marker layers (from query data) ---
       // Markers built from SQL/InfluxDB/… results. Like the tile layers, this is

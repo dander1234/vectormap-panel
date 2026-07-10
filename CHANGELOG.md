@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.11.0
+
+- Feature: **point-label fonts**. Each marker layer's label style gains a **Font
+  style** (Regular / Bold / Italic) and **Font family**; a new panel option,
+  *Point labels → Glyph (font) server URL*, lets a deployment point at a
+  self-hosted glyph server to use other typefaces (applied live via
+  `map.setGlyphs`). The built-in default serves Noto Sans Regular/Bold/Italic.
+  Bold greatly improves label legibility.
+- Feature: **collapsible layer groups**. Each named group heading in the on-map
+  layer control has a chevron — click it (or the group name) to collapse/expand
+  that group's layers. The group's show/hide checkbox is unaffected.
+
 ## 1.10.1
 
 - Fix: raise the viewer basemap picker above MapLibre's bottom-right attribution

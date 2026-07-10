@@ -178,7 +178,14 @@ export interface MarkerLayerConfig {
   labelTextColor: string; // '' = theme text color; else a fixed/named color
   labelHaloColor: string; // '' = theme background (outline for legibility)
   labelHaloWidth: number; // halo thickness in px (0 = none)
+  labelFontFamily: string; // font family name; '' = 'Noto Sans' (must exist on the glyph server)
+  labelFontStyle: LabelFontStyle; // regular | bold | italic (maps to the family's glyph stack)
 }
+
+// Weight/slant for label text. Composed with the family into a MapLibre
+// `text-font` stack, e.g. family 'Noto Sans' + 'bold' -> ['Noto Sans Bold']. The
+// resulting stack MUST be served by the glyph endpoint or no text renders.
+export type LabelFontStyle = 'regular' | 'bold' | 'italic';
 
 export interface VectormapOptions {
   // Initial map view (WGS84 degrees + zoom) used when the panel first loads.
@@ -195,6 +202,12 @@ export interface VectormapOptions {
   // first entry is the default) and the single `basemap` option above is ignored.
   // Empty = no picker; the map uses `basemap` as before.
   basemapChoices: BasemapChoice[];
+
+  // Glyph (font) server for point-label text, as a MapLibre template containing
+  // {fontstack}/{range}. '' = the built-in default (MapLibre's font server, which
+  // serves Noto Sans Regular/Bold/Italic). Point this at a self-hosted glyph
+  // server to use other typefaces (then set a layer's font family to match).
+  glyphsUrl: string;
 
   // The vector tile layers to render, top-most last.
   layers: VectorTileLayerConfig[];
@@ -279,5 +292,7 @@ export function createDefaultMarkerLayer(): MarkerLayerConfig {
     labelTextColor: '',
     labelHaloColor: '',
     labelHaloWidth: 1.5,
+    labelFontFamily: '',
+    labelFontStyle: 'regular',
   };
 }

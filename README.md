@@ -149,15 +149,20 @@ Both marker and tile layers appear in the grouped **layer control** (top-right):
 toggle visibility, and assign a **Group** name to related layers to group them
 together. Each **group heading has its own checkbox** that shows/hides all layers
 in the group at once (tri-state: checked / unchecked / indeterminate when only
-some are visible).
+some are visible), and a **chevron** to collapse/expand the group's layers (click
+the chevron or the group name).
 
 A marker layer can also define **Point label views** in its options — each a name
 plus a data field. When set, that layer's row in the control gets a dropdown so a
 viewer can re-display its points as text from the data (e.g. each ONT's `address`
 or `account_id`) beside the colored dot, or switch back to **Markers** (dot only).
 The dot and its status color are always kept as the anchor. The label text is
-formattable per layer — **size**, **color**, **halo color**, and **halo width**
-(blank colors follow the theme).
+formattable per layer — **font style** (Regular / Bold / Italic), **font family**,
+**size**, **color**, **halo color**, and **halo width** (blank colors follow the
+theme). Fonts are limited to what the glyph server hosts; the built-in default
+serves Noto Sans Regular/Bold/Italic. To use other typefaces, point *Point labels
+→ Glyph (font) server URL* at a self-hosted glyph server and set the layer's font
+family to match.
 
 ### 5. Select an area
 
