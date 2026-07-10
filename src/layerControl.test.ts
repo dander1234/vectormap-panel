@@ -1,4 +1,21 @@
-import { groupCheckState } from './layerControl';
+import { groupCheckState, orderByKey } from './layerControl';
+
+describe('orderByKey', () => {
+  const id = (s: string) => s;
+  it('puts listed keys first (in order), then unlisted in original order', () => {
+    expect(orderByKey(['a', 'b', 'c', 'd'], id, ['c', 'a'])).toEqual(['c', 'a', 'b', 'd']);
+  });
+  it('ignores stale keys that match no item', () => {
+    expect(orderByKey(['a', 'b'], id, ['x', 'b', 'y'])).toEqual(['b', 'a']);
+  });
+  it('is identity for empty order', () => {
+    expect(orderByKey(['a', 'b', 'c'], id, [])).toEqual(['a', 'b', 'c']);
+  });
+  it('works on objects via a key function', () => {
+    const list = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    expect(orderByKey(list, (o) => o.id, ['b']).map((o) => o.id)).toEqual(['b', 'a', 'c']);
+  });
+});
 
 describe('groupCheckState', () => {
   it('is "on" when every layer is visible (default = visible)', () => {

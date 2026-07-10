@@ -103,6 +103,17 @@ attribute table; styling polish is gated on need.
   group name, runtime-only). A chevron/name click toggles it; collapsed groups hide
   their layer rows. Independent of the group show/hide checkbox.
 
+  **Menu ordering:** the `layerOrder` option (`{ groupOrder, itemOrder }`, edited by
+  the drag-and-drop `LayerOrganizerEditor`) is pure display metadata keyed by group
+  name / layer id. `LayerControl` applies it with the stable `orderByKey` helper
+  (`layerControl.ts`, unit-tested) — listed keys first, unlisted keep their
+  first-seen/array order, stale keys ignored — so empty metadata renders exactly as
+  before and it survives layers being added/removed/regrouped. It deliberately does
+  NOT touch the `layers`/`markerLayers` arrays, so map draw/z-order is unaffected;
+  category membership stays each layer's `group` field (no drag-between-groups). The
+  organizer reads the live layers via `context.options` and native HTML5 DnD (no
+  added dependency).
+
 ## Viewer basemap switcher
 
 **Status: IMPLEMENTED.** `options.basemapChoices` (a curated `{label, kind, url}[]`,

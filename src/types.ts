@@ -60,6 +60,15 @@ export interface MarkerLabelView {
 // 'none' (overlays on a blank background) and 'custom' (your own XYZ raster URL).
 export type BasemapKind = 'osm' | 'carto-light' | 'carto-dark' | 'satellite' | 'none' | 'custom';
 
+// Menu-only ordering for the on-map layer control (edited via the drag-and-drop
+// organizer). Both lists are by stable key; anything not listed falls back to the
+// default first-seen/array order, and stale entries are ignored — so this survives
+// layers being added, removed, or regrouped. Does NOT affect map draw/z-order.
+export interface LayerOrder {
+  groupOrder: string[]; // group names ('' = ungrouped) in display order
+  itemOrder: string[]; // layer ids in display order (across both layer types)
+}
+
 // One entry in the viewer-facing basemap switcher. The admin curates a list of
 // these; when the list is non-empty an on-map picker lets the viewer switch
 // between them at runtime. `url` is only used when `kind === 'custom'`.
@@ -208,6 +217,9 @@ export interface VectormapOptions {
   // serves Noto Sans Regular/Bold/Italic). Point this at a self-hosted glyph
   // server to use other typefaces (then set a layer's font family to match).
   glyphsUrl: string;
+
+  // Menu-only display order for the on-map layer control (drag-and-drop organizer).
+  layerOrder: LayerOrder;
 
   // The vector tile layers to render, top-most last.
   layers: VectorTileLayerConfig[];

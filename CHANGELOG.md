@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.12.0
+
+- Feature: **organize the layer menu** with drag-and-drop. A new *Map view →
+  Organize layer menu* editor lets you reorder the categories and reorder layers
+  within a category by dragging. It sets the on-map layer control's display order
+  only — map draw/stacking order and category membership (the layer's Group field)
+  are unchanged. Stored as lightweight metadata keyed by layer id / group name, so
+  it survives layers being added, removed, or regrouped.
+
 ## 1.11.0
 
 - Feature: **point-label fonts**. Each marker layer's label style gains a **Font

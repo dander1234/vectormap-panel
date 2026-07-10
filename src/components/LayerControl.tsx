@@ -11,8 +11,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { GrafanaTheme2, SelectableValue } from '@grafana/data';
 import { Icon, Select, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
-import { MarkerShape, MarkerLabelView } from '../types';
-import { groupCheckState } from '../layerControl';
+import { MarkerShape, MarkerLabelView, LayerOrder } from '../types';
+import { groupCheckState, orderByKey } from '../layerControl';
 
 // Icon drawn next to a layer in the legend. Marker layers use their MarkerShape
 // so the legend matches the map; vector tile layers use 'line' (a bar) or a
@@ -145,6 +145,8 @@ interface Props {
   // Active label view per marker layer id ('' / missing = "Markers" = dot only).
   activeLabelView: Record<string, string>;
   onSelectLabelView: (layerId: string, viewName: string) => void;
+  // Menu-only display order (from the drag-and-drop organizer). Empty = first-seen.
+  layerOrder: LayerOrder;
 }
 
 export const LayerControl: React.FC<Props> = ({
@@ -154,6 +156,7 @@ export const LayerControl: React.FC<Props> = ({
   onToggleGroup,
   activeLabelView,
   onSelectLabelView,
+  layerOrder,
 }) => {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
@@ -177,10 +180,18 @@ export const LayerControl: React.FC<Props> = ({
     g.items.push(layer);
   }
 
+  // Apply the organizer's menu order: reorder the categories, and the layers
+  // within each. Unlisted entries keep their first-seen/array order (so empty
+  // metadata renders exactly as before).
+  const orderedGroups = orderByKey(groups, (g) => g.name, layerOrder?.groupOrder ?? []).map((g) => ({
+    ...g,
+    items: orderByKey(g.items, (l) => l.id, layerOrder?.itemOrder ?? []),
+  }));
+
   return (
     <div className={styles.container}>
       <div className={styles.title}>Layers</div>
-      {groups.map((group) => {
+      {orderedGroups.map((group) => {
         // Named groups collapse; the ungrouped ('') bucket has no heading and is
         // always shown.
         const isCollapsed = !!group.name && collapsed[group.name];
