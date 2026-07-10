@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.14.0
+
+- Feature: **vector tile line styles**. Line layers gain a **Line style** — solid,
+  dashed, dotted, or dash-dot (via `line-dasharray`) — to distinguish attributes
+  such as underground vs overhead (pair with a per-layer filter, since MapLibre
+  can't vary the dash by feature within one layer).
+- Feature: **icons on vector tile point layers**. A circle-geometry tile layer
+  gains an **Icon** field using the same searchable library (incl. telecom/fiber),
+  rendering a recolorable symbol instead of a plain dot; the legend matches and
+  click/select still work.
+- Fix: the on-map **Set initial view / Select area** toolbar now sits in an opaque
+  bordered panel so it stays legible over light basemaps (and dark ones), instead
+  of blending into pale backgrounds.
+
 ## 1.13.0
 
 - Feature: a **searchable marker-icon library** (~36 icons) replacing the 7-shape

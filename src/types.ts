@@ -49,6 +49,11 @@ export interface TooltipLink {
 // fetches the WRONG tiles unless told scheme: 'tms'.
 export type TileScheme = 'xyz' | 'tms';
 
+// Dash pattern for a vector tile LINE layer, to distinguish e.g. underground vs
+// overhead plant (combine with a per-layer filter, since MapLibre can't vary the
+// dash by feature attribute within one layer). Rendered via line-dasharray.
+export type LineStyle = 'solid' | 'dashed' | 'dotted' | 'dashdot';
+
 // One selectable "label view" for a marker layer. Lets a viewer re-display the
 // same points as text pulled from the data — e.g. { name: 'Address', field:
 // 'address' } shows each point's address beside its dot. `name` is what appears
@@ -115,10 +120,14 @@ export interface VectorTileLayerConfig {
   // Paint — only the set matching geometryType is used.
   lineColor: string;
   lineWidth: number;
+  lineStyle: LineStyle; // solid | dashed | dotted | dashdot (line geometry)
   fillColor: string;
   fillOpacity: number;
   circleColor: string;
   circleRadius: number;
+  // For 'circle' geometry: an icon id from the registry (src/icons.ts) to draw a
+  // recolorable symbol instead of a plain dot. '' or 'circle' = plain circle.
+  icon: string;
 
   // Optional MapLibre filter as JSON text, e.g. ["==", "status", "active"].
   filterExpression: string;
@@ -262,10 +271,12 @@ export function createDefaultLayer(): VectorTileLayerConfig {
     idField: '',
     lineColor: '#ff5722',
     lineWidth: 2,
+    lineStyle: 'solid',
     fillColor: '#3388ff',
     fillOpacity: 0.4,
     circleColor: '#1f77b4',
     circleRadius: 5,
+    icon: '',
     filterExpression: '',
     tooltipHideEmpty: true,
     tooltipInclude: '',

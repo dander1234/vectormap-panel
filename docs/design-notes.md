@@ -132,6 +132,14 @@ keywords, grouped by category). `MarkerShape` is now a string icon id; the 7
 original geometric ids are kept for back-compat. Multi-color/photographic icons are
 out of scope (they can't recolor).
 
+**Vector tile layers** reuse the same machinery: a `circle`-geometry layer with an
+`icon` set renders as an SDF `symbol` layer (via `ensureShapeIcon`/`iconIdForShape`,
+recolored by `icon-color`) instead of a native circle. `line` layers take a
+`lineStyle` mapped to a `line-dasharray` (solid omits it; dotted/dash-dot use the
+round `line-cap` for the dots). Dashes can't be data-driven in MapLibre, so
+per-attribute distinction (underground vs overhead) is done with a per-layer filter
++ style, the same pattern as per-layer color/width.
+
 ## Viewer basemap switcher
 
 **Status: IMPLEMENTED.** `options.basemapChoices` (a curated `{label, kind, url}[]`,

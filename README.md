@@ -17,7 +17,9 @@ loads the tiles in view at the current zoom.
 ## Features
 
 - **Vector tile layers** (MVT/PBF) — tile URL, source layer, geometry/paint,
-  optional MapLibre filter, and TMS/XYZ scheme (GeoServer GWC is TMS).
+  optional MapLibre filter, and TMS/XYZ scheme (GeoServer GWC is TMS). Line layers
+  support **dash styles** (solid/dashed/dotted/dash-dot); point (circle) layers can
+  use a **library icon** (incl. telecom/fiber) instead of a dot.
 - **Marker layers from query data** (any datasource — SQL, InfluxDB, …), bound
   per query (`refId`), sized by a field, with a **searchable icon library**
   (~36 icons) including telecom/fiber symbols (handhole, vault, ONT, cabinet,
@@ -136,6 +138,12 @@ Click **"Set initial view"** while zoomed out (this endpoint serves zoom 0–6)
 and the country polygons render from vector tiles. For a real
 GeoServer GWC / TMS endpoint, set **Tile scheme = TMS** instead. Tile URLs and
 filters accept Grafana **template variables** (e.g. `…/{z}/{x}/{y}.pbf?region=${region}`).
+
+For **line** layers, pick a **Line style** (solid / dashed / dotted / dash-dot) —
+to show e.g. underground vs overhead, make two layers on the same source with a
+**Filter** on the attribute and a different style each. For **circle** (point)
+layers, set an **Icon** to draw a recolorable library icon (telecom/fiber included)
+instead of a plain dot.
 
 Click a tile feature to open its attribute tooltip. This works even when the
 tiles carry no per-feature id (GeoServer omits the optional MVT feature id by
