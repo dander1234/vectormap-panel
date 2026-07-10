@@ -14,7 +14,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Button, IconButton, Icon, useStyles2 } from '@grafana/ui';
 import { css } from '@emotion/css';
-import { SelectionResult, SelectedLayerGroup, selectTooltipFields, selectionToCsv } from '../selection';
+import {
+  SelectionResult,
+  SelectedLayerGroup,
+  selectTooltipFields,
+  selectionToCsv,
+  selectionToPlainTable,
+  selectionToHtmlTable,
+} from '../selection';
 import { TooltipLink } from '../types';
 import { linkPlaceholderFields, resolveLink } from '../links';
 
@@ -241,7 +248,27 @@ export const SelectionResults: React.FC<Props> = ({ result, onClose, width, heig
   const isOpen = (layerId: string) => expanded[layerId] !== false; // default open
   const toggle = (layerId: string) => setExpanded((prev) => ({ ...prev, [layerId]: !isOpen(layerId) }));
 
-  const onCopy = () => navigator.clipboard?.writeText(selectionToCsv(result));
+  // Copy BOTH a rich HTML table (email / rich chat → a real grid) and an aligned
+  // plain-text table (monospace / Markdown targets → still readable). Falls back to
+  // plain text where ClipboardItem isn't available.
+  const onCopy = () => {
+    const plain = selectionToPlainTable(result);
+    const html = selectionToHtmlTable(result);
+    try {
+      if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+        void navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([plain], { type: 'text/plain' }),
+          }),
+        ]);
+        return;
+      }
+    } catch {
+      // fall through to plain text
+    }
+    navigator.clipboard?.writeText(plain);
+  };
   const onDownload = () => {
     const blob = new Blob([selectionToCsv(result)], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -278,7 +305,7 @@ export const SelectionResults: React.FC<Props> = ({ result, onClose, width, heig
         <div className={styles.actions}>
           {!empty && (
             <>
-              <Button size="sm" variant="secondary" icon="copy" onClick={onCopy} title="Copy all rows as CSV">
+              <Button size="sm" variant="secondary" icon="copy" onClick={onCopy} title="Copy as a formatted table (grid for email/chat, aligned text elsewhere)">
                 Copy
               </Button>
               <Button

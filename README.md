@@ -196,8 +196,9 @@ Click **Select area** (top-left), then choose a tool:
 
 Selected features are listed in a movable, resizable **results window**, grouped
 by layer with counts. Lines (e.g. plant segments) are included when they cross the
-shape/line, not only when a vertex is inside. Use **Copy** / **CSV** to export the
-list (e.g. affected customers or plant). Each layer has a **Selectable** toggle in
+shape/line, not only when a vertex is inside. **Copy** puts a formatted table on the
+clipboard (a real grid when pasted into email / Slack / Teams, aligned plain text
+elsewhere); **CSV** downloads a spreadsheet file. Each layer has a **Selectable** toggle in
 its options, so you can include some layers and exclude others; a layer must also
 be **visible** to be selected.
 

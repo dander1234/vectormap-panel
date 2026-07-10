@@ -542,6 +542,21 @@ const columnsFor = (group: SelectedLayerGroup): { titleHeader: string | null; ke
   return { titleHeader: usesTitle ? group.filter.titleField || 'title' : null, keys };
 };
 
+// The header + string rows for one layer group (shared by the CSV/text/HTML
+// exporters). Newlines in a cell are collapsed to spaces so they never break a
+// row.
+const groupRows = (group: SelectedLayerGroup): { header: string[]; rows: string[][] } => {
+  const { titleHeader, keys } = columnsFor(group);
+  const header = [...(titleHeader ? [titleHeader] : []), ...keys];
+  const rows = group.features.map((f) => {
+    const { title, entries } = selectTooltipFields(f.props, group.filter);
+    const map = new Map(entries);
+    const cells = [...(titleHeader ? [title ?? ''] : []), ...keys.map((k) => (map.has(k) ? map.get(k) : ''))];
+    return cells.map((c) => String(c ?? '').replace(/[\r\n]+/g, ' '));
+  });
+  return { header, rows };
+};
+
 // Export the whole selection as CSV. Because layers have different columns, we
 // emit one section per layer: a "# <name> (<count>)" comment line, a header row,
 // then one row per feature. Sections are separated by a blank line.
@@ -562,4 +577,41 @@ export const selectionToCsv = (result: SelectionResult): string => {
     sections.push(lines.join('\n'));
   }
   return sections.join('\n\n');
+};
+
+// Aligned plain-text tables (one per layer) for pasting into a chat/email that
+// renders in a monospace font — also a valid Markdown table, so Markdown-aware
+// targets show a real grid. Columns are padded to their widest cell.
+export const selectionToPlainTable = (result: SelectionResult): string => {
+  const pad = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - s.length));
+  const sections: string[] = [];
+  for (const group of result.groups) {
+    const { header, rows } = groupRows(group);
+    const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? '').length)));
+    const line = (cells: string[]) => `| ${cells.map((c, i) => pad(c, widths[i])).join(' | ')} |`;
+    const sep = `| ${widths.map((w) => '-'.repeat(w)).join(' | ')} |`;
+    const body = rows.map(line).join('\n');
+    sections.push(`${group.layerName} (${group.features.length})\n${line(header)}\n${sep}${body ? '\n' + body : ''}`);
+  }
+  return sections.join('\n\n');
+};
+
+// Rich HTML tables (one per layer) for pasting into email or a rich chat, which
+// render as real grids. Inline styles so they survive paste into Outlook/Gmail.
+export const selectionToHtmlTable = (result: SelectionResult): string => {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const td = 'style="border:1px solid #999;padding:4px 8px;text-align:left"';
+  const parts: string[] = [];
+  for (const group of result.groups) {
+    const { header, rows } = groupRows(group);
+    const head = `<tr>${header.map((h) => `<th ${td}>${esc(h)}</th>`).join('')}</tr>`;
+    const body = rows
+      .map((r) => `<tr>${header.map((_, i) => `<td ${td}>${esc(r[i] ?? '')}</td>`).join('')}</tr>`)
+      .join('');
+    parts.push(
+      `<p style="font-family:sans-serif"><b>${esc(group.layerName)}</b> (${group.features.length})</p>` +
+        `<table style="border-collapse:collapse;font-family:sans-serif;font-size:13px"><thead>${head}</thead><tbody>${body}</tbody></table>`
+    );
+  }
+  return parts.join('<br>');
 };
