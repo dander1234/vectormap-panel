@@ -84,19 +84,24 @@ attribute table; styling polish is gated on need.
   + `text-optional:true` declutter the labels.
 
   **Label formatting:** each marker layer carries `labelTextSize`, `labelTextColor`,
-  `labelHaloColor`, `labelHaloWidth` (blank colors resolve to the theme). These are
-  applied to the label symbol layer's `text-size`/`text-color`/`text-halo-*` on
-  every `applyMarkers` run so option edits take effect live.
+  `labelHaloColor`, `labelHaloWidth`, `labelFontFamily`, `labelFontStyle` (blank
+  colors resolve to the theme). These are applied to the label symbol layer's
+  `text-size`/`text-color`/`text-halo-*`/`text-font` on every `applyMarkers` run so
+  edits take effect live. `text-font` is composed by `labelFont(family, style)` →
+  e.g. `['Noto Sans Bold']`; the stack MUST be served by the glyph endpoint.
 
-  **Glyphs dependency:** MapLibre needs a `glyphs` URL to render ANY text. The map
-  style points at MapLibre's font server
-  (`https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf`, font `Noto Sans
-  Regular`) — the same class of external dependency as the raster basemaps. If it
-  is unreachable, labels simply don't render and the rest of the map is
-  unaffected. A self-hosted glyph server can be swapped in if a deployment must
-  avoid the CDN (candidate for a future option). NOTE:
-  `fonts.openmaptiles.org` was retired to an HTML landing page and no longer
-  serves fonts — do not use it.
+  **Glyphs dependency:** MapLibre needs a `glyphs` URL to render ANY text. The
+  `glyphsUrl` option (default `demotiles.maplibre.org/font/{fontstack}/{range}.pbf`,
+  which serves Noto Sans Regular/Bold/Italic) is applied at map init and kept live
+  by EFFECT G via `map.setGlyphs`. Point it at a self-hosted glyph server to use
+  other typefaces (then set a layer's `labelFontFamily` to match). If unreachable,
+  labels just don't render; the rest of the map is unaffected. NOTE:
+  `fonts.openmaptiles.org` was retired to an HTML landing page and no longer serves
+  fonts — do not use it.
+
+  **Collapsible groups:** the `LayerControl` keeps a local `collapsed` map (per
+  group name, runtime-only). A chevron/name click toggles it; collapsed groups hide
+  their layer rows. Independent of the group show/hide checkbox.
 
 ## Viewer basemap switcher
 

@@ -13,7 +13,14 @@ import React, { useState } from 'react';
 import { StandardEditorProps, SelectableValue, GrafanaTheme2, DataFrame } from '@grafana/data';
 import { Button, ColorPicker, Field, Icon, Input, Select, Switch, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
-import { MarkerLayerConfig, MarkerShape, MarkerColorMode, MarkerLabelView, createDefaultMarkerLayer } from '../types';
+import {
+  MarkerLayerConfig,
+  MarkerShape,
+  MarkerColorMode,
+  MarkerLabelView,
+  LabelFontStyle,
+  createDefaultMarkerLayer,
+} from '../types';
 import { MARKER_SHAPES } from '../shapeIcons';
 import { TooltipLinksEditor } from './TooltipLinksEditor';
 import { ColorRulesEditor } from './ColorRulesEditor';
@@ -30,6 +37,12 @@ const COLOR_MODE_OPTIONS: Array<SelectableValue<MarkerColorMode>> = [
   { label: 'By field (standard config)', value: 'field' },
   { label: 'By field — thresholds', value: 'thresholds' },
   { label: 'By field — regex', value: 'regex' },
+];
+
+const FONT_STYLE_OPTIONS: Array<SelectableValue<LabelFontStyle>> = [
+  { label: 'Regular', value: 'regular' },
+  { label: 'Bold', value: 'bold' },
+  { label: 'Italic', value: 'italic' },
 ];
 
 // Read a number out of a numeric <input>, falling back if blank/NaN.
@@ -402,6 +415,24 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
 
             {(layer.labelViews ?? []).length > 0 && (
               <div className={styles.labelStyleRow}>
+                <Field label="Font style" className={styles.labelStyleField}>
+                  <Select<LabelFontStyle>
+                    options={FONT_STYLE_OPTIONS}
+                    value={layer.labelFontStyle ?? 'regular'}
+                    onChange={(v) => update(i, { labelFontStyle: v.value ?? 'regular' })}
+                  />
+                </Field>
+                <Field
+                  label="Font family"
+                  className={styles.labelStyleField}
+                  description="Must exist on the glyph server; blank = Noto Sans"
+                >
+                  <Input
+                    value={layer.labelFontFamily ?? ''}
+                    placeholder="Noto Sans"
+                    onChange={(e) => update(i, { labelFontFamily: e.currentTarget.value })}
+                  />
+                </Field>
                 <Field label="Label size (px)" className={styles.labelStyleField}>
                   <Input
                     type="number"

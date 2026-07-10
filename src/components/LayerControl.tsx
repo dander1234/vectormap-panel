@@ -7,9 +7,9 @@
 // so they share a single grouped control. The panel owns the actual MapLibre
 // visibility changes; this just reports toggles.
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GrafanaTheme2, SelectableValue } from '@grafana/data';
-import { Select, useStyles2, useTheme2 } from '@grafana/ui';
+import { Icon, Select, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import { MarkerShape, MarkerLabelView } from '../types';
 import { groupCheckState } from '../layerControl';
@@ -157,6 +157,9 @@ export const LayerControl: React.FC<Props> = ({
 }) => {
   const styles = useStyles2(getStyles);
   const theme = useTheme2();
+  // Which named groups are collapsed (runtime UI state; default expanded).
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const toggleCollapsed = (name: string) => setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
 
   if (layers.length === 0) {
     return null;
@@ -177,19 +180,35 @@ export const LayerControl: React.FC<Props> = ({
   return (
     <div className={styles.container}>
       <div className={styles.title}>Layers</div>
-      {groups.map((group) => (
+      {groups.map((group) => {
+        // Named groups collapse; the ungrouped ('') bucket has no heading and is
+        // always shown.
+        const isCollapsed = !!group.name && collapsed[group.name];
+        return (
         <div key={group.name || '_ungrouped'} className={styles.group}>
           {group.name && (
-            <label className={styles.groupLabel}>
-              {/* One checkbox toggles every layer in this group at once. */}
+            <div className={styles.groupLabel}>
+              {/* Chevron toggles collapse; the group checkbox toggles visibility
+                  of all its layers; clicking the name also collapses. */}
+              <button
+                type="button"
+                className={styles.collapseBtn}
+                onClick={() => toggleCollapsed(group.name)}
+                aria-label={isCollapsed ? `Expand ${group.name}` : `Collapse ${group.name}`}
+                aria-expanded={!isCollapsed}
+              >
+                <Icon name={isCollapsed ? 'angle-right' : 'angle-down'} />
+              </button>
               <GroupCheckbox
                 state={groupCheckState(group.items.map((l) => l.id), visibility)}
                 onChange={(visible) => onToggleGroup(group.name, visible)}
               />
-              <span>{group.name}</span>
-            </label>
+              <span className={styles.groupName} onClick={() => toggleCollapsed(group.name)}>
+                {group.name}
+              </span>
+            </div>
           )}
-          {group.items.map((layer) => (
+          {!isCollapsed && group.items.map((layer) => (
             <div key={layer.id}>
               <label className={styles.item}>
                 <input
@@ -218,7 +237,8 @@ export const LayerControl: React.FC<Props> = ({
             </div>
           ))}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
@@ -248,8 +268,18 @@ const getStyles = (theme: GrafanaTheme2) => ({
     fontSize: theme.typography.bodySmall.fontSize,
     fontWeight: theme.typography.fontWeightMedium,
     marginTop: theme.spacing(0.5),
-    cursor: 'pointer',
   }),
+  collapseBtn: css({
+    display: 'inline-flex',
+    alignItems: 'center',
+    border: 'none',
+    background: 'none',
+    padding: 0,
+    margin: 0,
+    cursor: 'pointer',
+    color: theme.colors.text.secondary,
+  }),
+  groupName: css({ cursor: 'pointer', whiteSpace: 'nowrap' }),
   item: css({ display: 'flex', alignItems: 'center', gap: theme.spacing(0.5), cursor: 'pointer', lineHeight: 1.8 }),
   name: css({ whiteSpace: 'nowrap' }),
   // The per-marker-layer "point label" dropdown, indented under its layer row.
