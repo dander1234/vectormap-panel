@@ -44,7 +44,9 @@ export const BasemapControl: React.FC<Props> = ({ choices, activeIndex, onChange
 const getStyles = (theme: GrafanaTheme2) => ({
   wrap: css({
     position: 'absolute',
-    bottom: theme.spacing(1),
+    // Raised above MapLibre's bottom-right attribution bar so the copyright text
+    // doesn't overlap the picker.
+    bottom: theme.spacing(5),
     right: theme.spacing(1),
     zIndex: 1,
     display: 'flex',
