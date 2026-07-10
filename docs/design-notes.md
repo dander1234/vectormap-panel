@@ -103,16 +103,34 @@ attribute table; styling polish is gated on need.
   group name, runtime-only). A chevron/name click toggles it; collapsed groups hide
   their layer rows. Independent of the group show/hide checkbox.
 
-  **Menu ordering:** the `layerOrder` option (`{ groupOrder, itemOrder }`, edited by
-  the drag-and-drop `LayerOrganizerEditor`) is pure display metadata keyed by group
-  name / layer id. `LayerControl` applies it with the stable `orderByKey` helper
-  (`layerControl.ts`, unit-tested) — listed keys first, unlisted keep their
-  first-seen/array order, stale keys ignored — so empty metadata renders exactly as
-  before and it survives layers being added/removed/regrouped. It deliberately does
-  NOT touch the `layers`/`markerLayers` arrays, so map draw/z-order is unaffected;
-  category membership stays each layer's `group` field (no drag-between-groups). The
-  organizer reads the live layers via `context.options` and native HTML5 DnD (no
-  added dependency).
+  **Menu ordering:** the `layerOrder` option (`{ groupOrder, itemOrder,
+  collapsedGroups }`, edited by the drag-and-drop `LayerOrganizerEditor`) is pure
+  display metadata keyed by group name / layer id. `LayerControl` applies order with
+  the stable `orderByKey` helper (`layerControl.ts`, unit-tested) — listed keys
+  first, unlisted keep their first-seen/array order, stale keys ignored — so empty
+  metadata renders exactly as before and it survives layers being
+  added/removed/regrouped. It deliberately does NOT touch the `layers`/`markerLayers`
+  arrays, so map draw/z-order is unaffected; category membership stays each layer's
+  `group` field (no drag-between-groups). The organizer reads the live layers via
+  `context.options` and native HTML5 DnD (no added dependency). `collapsedGroups`
+  seeds each group's initial collapsed state (a group with no runtime toggle follows
+  it); a per-group "Collapsed" checkbox in the organizer edits it.
+
+## Marker icon library
+
+**Status: IMPLEMENTED.** `src/icons.ts` is the single registry (`MarkerIcon`
+`{ id, name, category, keywords, path, fillRule? }`) used by BOTH the map and the
+legend. Each icon is a **monochrome silhouette** in a 24×24 viewBox — monochrome is
+required so MapLibre can recolor it per feature via `icon-color`
+(color-by-data / status / highlight). `shapeIcons.ts` rasterizes an icon's SVG
+`path` with `Path2D` (scaled into `SHAPE_ICON_EFFECTIVE`, filled with its
+`fillRule`) and runs the existing EDT → SDF pipeline; `'circle'` stays a native
+circle layer, unknown ids fall back to the square. The legend `ShapeSwatch`
+(`LayerControl.tsx`) renders the same `path` as an `<svg>`. The picker
+(`IconPicker.tsx`) is a search-over-grid popover (`searchIcons`, matching name +
+keywords, grouped by category). `MarkerShape` is now a string icon id; the 7
+original geometric ids are kept for back-compat. Multi-color/photographic icons are
+out of scope (they can't recolor).
 
 ## Viewer basemap switcher
 

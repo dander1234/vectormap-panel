@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.13.0
+
+- Feature: a **searchable marker-icon library** (~36 icons) replacing the 7-shape
+  dropdown, including **telecom/fiber** symbols — handhole, vault, manhole, ONT,
+  cabinet, pedestal, splice closure, pole, tower, network node, splitter,
+  amplifier, meter, NID/terminal, junction box, central office, repeater, antenna
+  — plus general and geometric sets. Pick from a **grid popover with search**
+  (matches name + keywords, grouped by category). Icons stay monochrome
+  silhouettes so they still recolor per feature (status / highlight); the 7
+  original shape ids are preserved for existing panels.
+- Feature: **per-group collapsed-on-load**. In *Map view → Organize layer menu*,
+  tick a group's **Collapsed** checkbox to have it start collapsed in the layer
+  control (viewers can still expand it). Stored with the menu ordering.
+
 ## 1.12.0
 
 - Feature: **organize the layer menu** with drag-and-drop. A new *Map view →
