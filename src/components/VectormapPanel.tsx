@@ -6,7 +6,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { PanelProps, GrafanaTheme2, DataFrame } from '@grafana/data';
-import { Button, RadioButtonGroup, useStyles2, useTheme2 } from '@grafana/ui';
+import { Button, IconButton, RadioButtonGroup, useStyles2, useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import maplibregl from 'maplibre-gl';
 import {
@@ -39,9 +39,18 @@ import {
 import { fillUrl, sanitizeUrl } from '../links';
 import { pathLengthMeters, formatDistanceBoth } from '../measure';
 import { MeasureReadout } from './MeasureReadout';
+import { AnnotationEditor, Annotation } from './AnnotationEditor';
 
 // The selection tools offered in the toolbar.
 type SelectTool = 'box' | 'lasso' | 'line' | 'trace' | 'click';
+
+// A measurement the user pinned to the map (session-only).
+interface HeldMeasurement {
+  id: string;
+  points: Array<[number, number]>; // [lng,lat]
+  meters: number;
+}
+
 
 // MapLibre's stylesheet (positions the canvas, controls, and popups). Grafana
 // plugin code rules forbid importing stylesheet files directly, so instead of a
@@ -115,6 +124,14 @@ const MEASURE_LINE_SRC = 'measure-line';
 const MEASURE_LINE_LAYER = 'measure-line';
 const MEASURE_PT_SRC = 'measure-pts';
 const MEASURE_PT_LAYER = 'measure-pts';
+// Held (pinned) measurements — a persistent line + distance-label layer.
+const HELD_SRC = 'measure-held';
+const HELD_LINE_LAYER = 'measure-held-line';
+const HELD_LABEL_LAYER = 'measure-held-label';
+// Temp markers / annotations — one symbol layer (icon + name label).
+const ANNOT_SRC = 'annotations';
+const ANNOT_LAYER = 'annotations';
+const ANNOT_CONTROL_ID = 'annotations'; // synthetic id in the layer control
 
 // Paint expression: highlight value when the feature is selected, else normal.
 // Returns `any` to sidestep MapLibre's strict expression typing.
@@ -489,6 +506,29 @@ export const VectormapPanel: React.FC<Props> = ({
   }, [measureMode]);
   const measurePointsRef = useRef<Array<[number, number]>>([]);
   const [measureMeters, setMeasureMeters] = useState(0);
+  const [measurePointCount, setMeasurePointCount] = useState(0); // committed vertices (drives Hold)
+  // Measurements the user "held" (pinned to the map). Session-only; they stay
+  // drawn regardless of the active tool until cleared.
+  const [heldMeasurements, setHeldMeasurements] = useState<HeldMeasurement[]>([]);
+
+  // --- Temp markers / annotations (session-only "dynamic layer") -----------
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const annotationsRef = useRef<Annotation[]>([]);
+  useEffect(() => {
+    annotationsRef.current = annotations;
+  }, [annotations]);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [addMarkerMode, setAddMarkerMode] = useState(false);
+  const addMarkerModeRef = useRef(false);
+  useEffect(() => {
+    addMarkerModeRef.current = addMarkerMode;
+  }, [addMarkerMode]);
+  // Monotonic counter for annotation/held ids (Math.random/Date.now unavailable
+  // in some contexts; a ref counter is deterministic and unique per session).
+  const idCounterRef = useRef(0);
+  const nextId = (prefix: string) => `${prefix}-${(idCounterRef.current += 1)}`;
+  // True once the map's initial style has loaded (set in EFFECT 1).
+  const mapLoadedRef = useRef(false);
   // The current selection results shown in the bottom drawer (null = drawer
   // closed). Populated by runSelection after a box is drawn.
   const [selection, setSelection] = useState<SelectionResult | null>(null);
@@ -654,11 +694,166 @@ export const VectormapPanel: React.FC<Props> = ({
       } as any);
     }
     setMeasureMeters(pathLengthMeters(pts));
+    setMeasurePointCount(measurePointsRef.current.length);
   };
 
   const clearMeasure = () => {
     measurePointsRef.current = [];
     redrawMeasure();
+  };
+
+  // Pin the current measured path so it stays on the map, then reset the active
+  // path (so the user can measure again or switch tools while it's held).
+  const holdMeasurement = () => {
+    const pts = measurePointsRef.current;
+    if (pts.length < 2) {
+      return;
+    }
+    setHeldMeasurements((prev) => [...prev, { id: nextId('held'), points: [...pts], meters: pathLengthMeters(pts) }]);
+    clearMeasure();
+  };
+
+  // Keep the session overlays (held measurements + annotation markers) pinned to
+  // the very top so a tile/marker re-apply can never bury or drop them.
+  const pinOverlaysOnTop = (map: maplibregl.Map) => {
+    for (const id of [HELD_LINE_LAYER, HELD_LABEL_LAYER, ANNOT_LAYER]) {
+      if (map.getLayer(id)) {
+        map.moveLayer(id);
+      }
+    }
+  };
+
+  // --- Held measurements draw (persistent) --------------------------------
+  const ensureHeldLayers = (map: maplibregl.Map) => {
+    if (map.getSource(HELD_SRC)) {
+      return;
+    }
+    map.addSource(HELD_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } as any });
+    map.addLayer({
+      id: HELD_LINE_LAYER,
+      type: 'line',
+      source: HELD_SRC,
+      filter: ['==', ['geometry-type'], 'LineString'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': HIGHLIGHT_COLOR, 'line-width': 2.5 },
+    });
+    map.addLayer({
+      id: HELD_LABEL_LAYER,
+      type: 'symbol',
+      source: HELD_SRC,
+      filter: ['==', ['geometry-type'], 'Point'],
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-font': ['Noto Sans Bold'],
+        'text-size': 12,
+        'text-anchor': 'bottom',
+        'text-offset': [0, -0.4],
+        'text-allow-overlap': true,
+      },
+      paint: { 'text-color': HIGHLIGHT_COLOR, 'text-halo-color': theme.colors.background.primary, 'text-halo-width': 1.8 },
+    });
+  };
+
+  // --- Annotations (temp markers) draw ------------------------------------
+  const ensureAnnotLayers = (map: maplibregl.Map) => {
+    if (map.getSource(ANNOT_SRC)) {
+      return;
+    }
+    map.addSource(ANNOT_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } as any });
+    map.addLayer({
+      id: ANNOT_LAYER,
+      type: 'symbol',
+      source: ANNOT_SRC,
+      layout: {
+        'icon-image': ['get', '__iconId'],
+        'icon-size': (2 * 9) / SHAPE_ICON_EFFECTIVE, // ~9px radius icons
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'text-field': ['get', 'name'],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 12,
+        'text-anchor': 'top',
+        'text-offset': [0, 0.8],
+        'text-optional': true,
+      },
+      paint: {
+        'icon-color': ['get', '__color'],
+        'icon-halo-color': '#ffffff',
+        'icon-halo-width': 1,
+        'text-color': theme.colors.text.primary,
+        'text-halo-color': theme.colors.background.primary,
+        'text-halo-width': 1.5,
+      },
+    });
+  };
+
+  // Redraw held measurements whenever they change (line + a distance label at the
+  // end of each). The layers are created LAZILY here (on top of the current stack,
+  // so they're never buried) and drawn via setData — gated on mapLoadedRef so
+  // addLayer never runs before the initial style load (but works freely after,
+  // even when isStyleLoaded() transiently reports false during data updates).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current) {
+      return;
+    }
+    ensureHeldLayers(map);
+    const features: any[] = [];
+    for (const h of heldMeasurements) {
+      if (h.points.length < 2) {
+        continue;
+      }
+      features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: h.points }, properties: {} });
+      const end = h.points[h.points.length - 1];
+      features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: end }, properties: { label: formatDistanceBoth(h.meters) } });
+    }
+    (map.getSource(HELD_SRC) as maplibregl.GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features } as any);
+    pinOverlaysOnTop(map);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heldMeasurements]);
+
+  // Redraw the annotation markers whenever they change (register each icon first;
+  // coerce 'circle'/blank to 'pin' since annotations use SDF icons). Same lazy,
+  // on-top, mapLoadedRef-gated pattern as held measurements.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current) {
+      return;
+    }
+    ensureAnnotLayers(map);
+    const features = annotations.map((a) => {
+      const iconId = a.icon && a.icon !== 'circle' ? a.icon : 'pin';
+      ensureShapeIcon(map, iconId);
+      return {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [a.lng, a.lat] },
+        properties: {
+          id: a.id,
+          name: a.name,
+          __iconId: iconIdForShape(iconId),
+          __color: theme.visualization.getColorByName(a.color || '#1f77b4'),
+        },
+      };
+    });
+    (map.getSource(ANNOT_SRC) as maplibregl.GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features } as any);
+    pinOverlaysOnTop(map);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [annotations, theme]);
+
+  // Annotation CRUD (session-only state). Add drops a marker with sensible
+  // defaults and selects it; update patches one; remove deletes it.
+  const addAnnotation = (lng: number, lat: number) => {
+    const id = nextId('annot');
+    const n = annotationsRef.current.length + 1;
+    const annot: Annotation = { id, lng, lat, name: `Marker ${n}`, note: '', color: '#1f77b4', icon: 'pin' };
+    setAnnotations((prev) => [...prev, annot]);
+    setSelectedAnnotationId(id);
+  };
+  const updateAnnotation = (id: string, patch: Partial<Annotation>) =>
+    setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  const removeAnnotation = (id: string) => {
+    setAnnotations((prev) => prev.filter((a) => a.id !== id));
+    setSelectedAnnotationId((cur) => (cur === id ? null : cur));
   };
 
   // --- Address search -------------------------------------------------------
@@ -793,10 +988,17 @@ export const VectormapPanel: React.FC<Props> = ({
     });
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
     mapRef.current = map;
+    // A persistent "initial style loaded" flag. Unlike map.isStyleLoaded() (which
+    // flips back to false during data updates), this stays true after the first
+    // load, so overlay draws can safely addLayer/setData at any time afterward.
+    map.on('load', () => {
+      mapLoadedRef.current = true;
+    });
 
     return () => {
       map.remove();
       mapRef.current = null;
+      mapLoadedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1035,6 +1237,7 @@ export const VectormapPanel: React.FC<Props> = ({
           map.moveLayer(l.id);
         }
       });
+      pinOverlaysOnTop(map);
     };
 
     if (map.isStyleLoaded()) {
@@ -1194,6 +1397,8 @@ export const VectormapPanel: React.FC<Props> = ({
         }
         map.setLayoutProperty(labelId, 'visibility', desiredVisible && activeField ? 'visible' : 'none');
       }
+      // Keep the session overlays above the (re-added) marker layers.
+      pinOverlaysOnTop(map);
     };
     if (map.isStyleLoaded()) {
       applyMarkers();
@@ -1230,6 +1435,11 @@ export const VectormapPanel: React.FC<Props> = ({
         redrawMeasure();
         return;
       }
+      // Add-marker mode: a click drops a temp marker there.
+      if (addMarkerModeRef.current) {
+        addAnnotation(e.lngLat.lng, e.lngLat.lat);
+        return;
+      }
       // While a Select tool is active, a click either picks a feature (the 'click'
       // tool) or is part of drawing a shape (handled by EFFECT 6) — no popup.
       if (selectModeRef.current) {
@@ -1237,6 +1447,25 @@ export const VectormapPanel: React.FC<Props> = ({
           toggleClickSelect(e.point);
         }
         return;
+      }
+      // Clicking an existing temp marker selects it and shows its name + note.
+      if (map.getLayer(ANNOT_LAYER)) {
+        const hit = map.queryRenderedFeatures(e.point, { layers: [ANNOT_LAYER] })[0];
+        if (hit) {
+          const a = annotationsRef.current.find((x) => x.id === String(hit.properties?.id ?? ''));
+          if (a) {
+            clearHighlight();
+            popupRef.current?.remove();
+            setSelectedAnnotationId(a.id);
+            const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const noteHtml = a.note ? `<div>${esc(a.note).replace(/\n/g, '<br>')}</div>` : '';
+            popupRef.current = new maplibregl.Popup({ maxWidth: '260px', closeOnClick: true, className: renderRef.current.popupClass })
+              .setLngLat([a.lng, a.lat])
+              .setHTML(`<div><strong>${esc(a.name)}</strong>${noteHtml}</div>`)
+              .addTo(map);
+            return;
+          }
+        }
       }
       const ids = ourLayerIds();
       clearHighlight();
@@ -1515,6 +1744,13 @@ export const VectormapPanel: React.FC<Props> = ({
   // that so a group toggle can batch a single setVisibility.
   const applyLayerVisibility = (map: maplibregl.Map, layerId: string, visible: boolean) => {
     const vis: 'visible' | 'none' = visible ? 'visible' : 'none';
+    // The synthetic annotations layer toggles its own symbol layer.
+    if (layerId === ANNOT_CONTROL_ID) {
+      if (map.getLayer(ANNOT_LAYER)) {
+        map.setLayoutProperty(ANNOT_LAYER, 'visibility', vis);
+      }
+      return;
+    }
     const vtId = layerIdFor(layerId);
     const mkId = mkLayerIdFor(layerId);
     if (map.getLayer(vtId)) {
@@ -1588,13 +1824,15 @@ export const VectormapPanel: React.FC<Props> = ({
     });
   };
 
-  // Toggle the Select-area tool. Turning it on exits measure mode (mutually
-  // exclusive) and closes any single-feature popup.
+  // The three interaction modes (select / measure / add-marker) are mutually
+  // exclusive. Turning one on turns the others off.
   const toggleSelectMode = () => {
     setSelectMode((on) => {
       const next = !on;
       if (next) {
         setMeasureMode(false);
+        setAddMarkerMode(false);
+        mapRef.current?.doubleClickZoom.enable();
         popupRef.current?.remove();
         popupRef.current = null;
       }
@@ -1602,18 +1840,29 @@ export const VectormapPanel: React.FC<Props> = ({
     });
   };
 
-  // Toggle the Measure tool. Turning it on exits select mode; turning it off clears
-  // the drawn measurement.
   const toggleMeasureMode = () => {
     setMeasureMode((on) => {
       const next = !on;
       const map = mapRef.current;
       if (next) {
         setSelectMode(false);
+        setAddMarkerMode(false);
         map?.doubleClickZoom.disable(); // clicks add vertices; don't zoom on dblclick
       } else {
         clearMeasure();
         map?.doubleClickZoom.enable();
+      }
+      return next;
+    });
+  };
+
+  const toggleAddMarkerMode = () => {
+    setAddMarkerMode((on) => {
+      const next = !on;
+      if (next) {
+        setSelectMode(false);
+        setMeasureMode(false);
+        mapRef.current?.doubleClickZoom.enable();
       }
       return next;
     });
@@ -1633,6 +1882,19 @@ export const VectormapPanel: React.FC<Props> = ({
     return () => document.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [measureMode]);
+
+  // Compact chip for the held-measurements count + clear (in the toolbar).
+  const heldChipClass = css({
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(0.5),
+    padding: theme.spacing(0.25, 0.75),
+    background: theme.colors.background.secondary,
+    border: `1px solid ${theme.colors.border.weak}`,
+    borderRadius: theme.shape.radius.default,
+    fontSize: theme.typography.bodySmall.fontSize,
+    whiteSpace: 'nowrap',
+  });
 
   // Build the unified layer-control list: drawable tile layers plus all marker
   // layers, each normalized to { id, name, group, color }. The swatch color is
@@ -1668,6 +1930,10 @@ export const VectormapPanel: React.FC<Props> = ({
       color: l.fixedColor || '#1f77b4',
       labelViews: l.labelViews ?? [], // enables the per-layer label-view dropdown
     })),
+    // Synthetic entry for the session-only temp-marker layer (only when non-empty).
+    ...(annotations.length > 0
+      ? [{ id: ANNOT_CONTROL_ID, name: 'Annotations', group: '', shape: 'pin' as LegendShape, color: '#1f77b4' }]
+      : []),
   ];
 
   // Effective visibility shown in the LayerControl = explicit override, else the
@@ -1677,6 +1943,7 @@ export const VectormapPanel: React.FC<Props> = ({
   for (const l of [...(options.layers ?? []), ...(options.markerLayers ?? [])]) {
     effectiveVisibility[l.id] = visibility[l.id] ?? l.visible !== false;
   }
+  effectiveVisibility[ANNOT_CONTROL_ID] = visibility[ANNOT_CONTROL_ID] !== false;
 
   return (
     <div
@@ -1745,7 +2012,28 @@ export const VectormapPanel: React.FC<Props> = ({
         >
           {measureMode ? 'Measuring…' : 'Measure'}
         </Button>
-        {measureMode && <MeasureReadout text={formatDistanceBoth(measureMeters)} onClear={clearMeasure} />}
+        {measureMode && (
+          <MeasureReadout
+            text={formatDistanceBoth(measureMeters)}
+            onClear={clearMeasure}
+            onHold={measurePointCount >= 2 ? holdMeasurement : undefined}
+          />
+        )}
+        {heldMeasurements.length > 0 && (
+          <div className={heldChipClass}>
+            <span>📏 {heldMeasurements.length} held</span>
+            <IconButton name="times" aria-label="Clear held measurements" tooltip="Clear held" onClick={() => setHeldMeasurements([])} />
+          </div>
+        )}
+        <Button
+          size="sm"
+          variant={addMarkerMode ? 'primary' : 'secondary'}
+          icon="map-marker"
+          onClick={toggleAddMarkerMode}
+          title="Add a temporary marker (click the map to place it)"
+        >
+          {addMarkerMode ? 'Placing…' : 'Add marker'}
+        </Button>
       </div>
       {options.searchEnabled !== false && (
         <SearchBox
@@ -1771,6 +2059,20 @@ export const VectormapPanel: React.FC<Props> = ({
         activeIndex={activeBasemapIdx}
         onChange={setActiveBasemapIdx}
       />
+      {(addMarkerMode || selectedAnnotationId) && (
+        <AnnotationEditor
+          annotations={annotations}
+          selectedId={selectedAnnotationId}
+          addMode={addMarkerMode}
+          onSelect={setSelectedAnnotationId}
+          onUpdate={updateAnnotation}
+          onRemove={removeAnnotation}
+          onClose={() => {
+            setSelectedAnnotationId(null);
+            setAddMarkerMode(false);
+          }}
+        />
+      )}
       {selection && (
         <SelectionResults
           result={selection}
