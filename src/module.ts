@@ -16,6 +16,7 @@ const VIEW = ['Map view'];
 const BASEMAP = ['Basemap'];
 const SEARCH = ['Address search'];
 const LABELS = ['Point labels'];
+const TOOLS = ['Map tools'];
 
 export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanelOptions((builder) => {
   return (
@@ -131,6 +132,23 @@ export const plugin = new PanelPlugin<VectormapOptions>(VectormapPanel).setPanel
         settings: { placeholder: 'Search address or ID…' },
         category: SEARCH,
         showIf: (opts) => opts.searchEnabled !== false,
+      })
+      // --- Map tools ---
+      .addSelect({
+        path: 'measureUnit',
+        name: 'Measurement units',
+        description: 'Default units for the ruler/measure readout. Viewers can also change this from the measure toolbar.',
+        defaultValue: 'auto',
+        settings: {
+          options: [
+            { value: 'auto', label: 'Auto (ft/mi + m/km)' },
+            { value: 'ft', label: 'Feet' },
+            { value: 'mi', label: 'Miles' },
+            { value: 'm', label: 'Meters' },
+            { value: 'km', label: 'Kilometers' },
+          ],
+        },
+        category: TOOLS,
       })
       // --- Point labels ---
       .addTextInput({

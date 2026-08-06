@@ -37,7 +37,7 @@ import {
   FieldFilterConfig,
 } from '../selection';
 import { fillUrl, sanitizeUrl } from '../links';
-import { pathLengthMeters, formatDistanceBoth } from '../measure';
+import { pathLengthMeters, formatDistance, MeasureUnit } from '../measure';
 import { MeasureReadout } from './MeasureReadout';
 import { AnnotationEditor, Annotation } from './AnnotationEditor';
 
@@ -507,6 +507,8 @@ export const VectormapPanel: React.FC<Props> = ({
   const measurePointsRef = useRef<Array<[number, number]>>([]);
   const [measureMeters, setMeasureMeters] = useState(0);
   const [measurePointCount, setMeasurePointCount] = useState(0); // committed vertices (drives Hold)
+  // Viewer-selected measure unit (starts from the panel option; changeable live).
+  const [measureUnit, setMeasureUnit] = useState<MeasureUnit>(options.measureUnit ?? 'auto');
   // Measurements the user "held" (pinned to the map). Session-only; they stay
   // drawn regardless of the active tool until cleared.
   const [heldMeasurements, setHeldMeasurements] = useState<HeldMeasurement[]>([]);
@@ -805,12 +807,12 @@ export const VectormapPanel: React.FC<Props> = ({
       }
       features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: h.points }, properties: {} });
       const end = h.points[h.points.length - 1];
-      features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: end }, properties: { label: formatDistanceBoth(h.meters) } });
+      features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: end }, properties: { label: formatDistance(h.meters, measureUnit) } });
     }
     (map.getSource(HELD_SRC) as maplibregl.GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features } as any);
     pinOverlaysOnTop(map);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heldMeasurements]);
+  }, [heldMeasurements, measureUnit]);
 
   // Redraw the annotation markers whenever they change (register each icon first;
   // coerce 'circle'/blank to 'pin' since annotations use SDF icons). Same lazy,
@@ -2014,7 +2016,9 @@ export const VectormapPanel: React.FC<Props> = ({
         </Button>
         {measureMode && (
           <MeasureReadout
-            text={formatDistanceBoth(measureMeters)}
+            text={formatDistance(measureMeters, measureUnit)}
+            unit={measureUnit}
+            onUnitChange={setMeasureUnit}
             onClear={clearMeasure}
             onHold={measurePointCount >= 2 ? holdMeasurement : undefined}
           />

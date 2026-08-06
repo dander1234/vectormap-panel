@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.18.0
+
+- Feature: **measurement units**. The ruler can lock to a single unit instead of
+  auto-switching (e.g. stay in **feet** rather than flipping to miles). Set the
+  default under *Map tools → Measurement units* (Auto / Feet / Miles / Meters / Km),
+  and switch it live from a dropdown in the measure toolbar; held-measurement labels
+  reformat to match.
+- Feature: **duplicate a layer**. Each tile and marker layer card has a copy button
+  that clones the layer (all settings, named "… (copy)") right after it — for
+  quickly setting up a similar layer without re-entering shared info.
+
 ## 1.17.0
 
 - Feature: **hold a measurement**. The ruler's readout gains a **Hold** button that

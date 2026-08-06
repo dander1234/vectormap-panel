@@ -205,7 +205,10 @@ click points to build a path drawn as a **geo-anchored** GeoJSON line + vertices
 lengths and `formatDistanceBoth` (imperial + metric). A live provisional segment
 follows the cursor; Esc/Clear resets; double-click-zoom is disabled while active.
 **Hold** pins the current path into `heldMeasurements` (session state) drawn on a
-persistent `measure-held` source.
+persistent `measure-held` source. Units come from `formatDistance(meters, unit)`
+(`src/measure.ts`, tested): `'auto'` = both imperial+metric with switching, the rest
+lock to one unit. The default is the `measureUnit` option; the viewer can override it
+live from the readout (held labels reformat too).
 
 **Session overlays (held measurements + temp markers).** Both live in runtime state
 (not saved to options). Their GeoJSON sources/layers are created **lazily on top**

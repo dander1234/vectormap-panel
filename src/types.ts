@@ -5,6 +5,7 @@
 // the edit UI from module.ts; TypeScript checks the component against these).
 
 import { GeocoderKind } from './geocode';
+import { MeasureUnit } from './measure';
 
 // How a vector tile layer's features are drawn.
 export type GeometryType = 'line' | 'fill' | 'circle';
@@ -233,6 +234,11 @@ export interface VectormapOptions {
   // Menu-only display order + per-group collapsed-on-load state for the layer
   // control (drag-and-drop organizer).
   layerOrder: LayerOrder;
+
+  // Default unit for the ruler/measure readout ('auto' = both imperial+metric with
+  // ft↔mi switching; 'ft'/'mi'/'m'/'km' lock to one unit). The viewer can also
+  // change it live from the measure toolbar.
+  measureUnit: MeasureUnit;
 
   // The vector tile layers to render, top-most last.
   layers: VectorTileLayerConfig[];
