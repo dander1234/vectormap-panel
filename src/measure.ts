@@ -41,3 +41,25 @@ export const formatDistanceBoth = (meters: number): string => {
   const metric = meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${withCommas(Math.round(meters))} m`;
   return `${imperial} (${metric})`;
 };
+
+// How the ruler shows a distance: 'auto' = both imperial+metric with ft↔mi / m↔km
+// switching (formatDistanceBoth); the rest lock to a single unit (no switching),
+// e.g. 'ft' always shows feet no matter how long the run is.
+export type MeasureUnit = 'auto' | 'ft' | 'mi' | 'm' | 'km';
+
+export const formatDistance = (meters: number, unit: MeasureUnit): string => {
+  const feet = meters / M_PER_FT;
+  switch (unit) {
+    case 'ft':
+      return `${withCommas(Math.round(feet))} ft`;
+    case 'mi':
+      return `${(feet / FT_PER_MI).toFixed(2)} mi`;
+    case 'm':
+      return `${withCommas(Math.round(meters))} m`;
+    case 'km':
+      return `${(meters / 1000).toFixed(2)} km`;
+    case 'auto':
+    default:
+      return formatDistanceBoth(meters);
+  }
+};

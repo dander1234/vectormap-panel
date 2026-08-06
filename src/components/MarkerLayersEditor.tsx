@@ -162,6 +162,14 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
     onChange([...layers, layer]);
   };
   const remove = (index: number) => onChange(layers.filter((_, i) => i !== index));
+  // Clone a marker layer (fresh id, "(copy)" name) inserted right after — reuse
+  // most of an existing layer's setup for a similar one.
+  const duplicate = (index: number) => {
+    const src = layers[index];
+    const copy: MarkerLayerConfig = { ...src, id: 'mlayer-' + Math.random().toString(36).slice(2, 9), name: `${src.name} (copy)` };
+    setExpanded((p) => ({ ...p, [copy.id]: true }));
+    onChange([...layers.slice(0, index + 1), copy, ...layers.slice(index + 1)]);
+  };
   const move = (index: number, dir: -1 | 1) => {
     const j = index + dir;
     if (j < 0 || j >= layers.length) {
@@ -210,6 +218,7 @@ export const MarkerLayersEditor: React.FC<Props> = ({ value, onChange, context }
                 <Button size="sm" variant="secondary" fill="text" onClick={() => move(i, 1)} title="Move down">
                   ↓
                 </Button>
+                <Button size="sm" variant="secondary" fill="text" icon="copy" aria-label="Duplicate this layer" onClick={() => duplicate(i)} title="Duplicate this layer" />
                 <Button size="sm" variant="destructive" fill="text" onClick={() => remove(i)}>
                   Remove
                 </Button>

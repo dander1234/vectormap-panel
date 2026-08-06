@@ -1,4 +1,4 @@
-import { haversineMeters, pathLengthMeters, formatDistanceBoth } from './measure';
+import { haversineMeters, pathLengthMeters, formatDistanceBoth, formatDistance } from './measure';
 
 describe('haversineMeters', () => {
   it('is 0 for the same point', () => {
@@ -39,5 +39,19 @@ describe('formatDistanceBoth', () => {
   });
   it('is 0 ft (0 m) at zero', () => {
     expect(formatDistanceBoth(0)).toBe('0 ft (0 m)');
+  });
+});
+
+describe('formatDistance (single-unit locking)', () => {
+  it('stays in feet even for long runs (no switch to miles)', () => {
+    expect(formatDistance(4360, 'ft')).toBe('14,304 ft');
+  });
+  it('locks to each other unit', () => {
+    expect(formatDistance(4360, 'mi')).toBe('2.71 mi');
+    expect(formatDistance(4360, 'm')).toBe('4,360 m');
+    expect(formatDistance(4360, 'km')).toBe('4.36 km');
+  });
+  it('auto matches formatDistanceBoth', () => {
+    expect(formatDistance(378, 'auto')).toBe(formatDistanceBoth(378));
   });
 });

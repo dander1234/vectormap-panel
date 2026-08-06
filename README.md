@@ -37,9 +37,9 @@ loads the tiles in view at the current zoom.
   at a time to toggle them in/out — great for cherry-picking, e.g. offline units).
   Opt in per layer; results show in a movable, resizable window grouped by layer,
   with per-layer counts, **Copy** (a formatted table for email/chat), and **CSV**.
-- **Measure** — a ruler tool: click a path to get the distance in **both imperial
-  and metric** (ft/mi and m/km), with a live segment to the cursor; **Hold** pins a
-  measurement to the map.
+- **Measure** — a ruler tool: click a path for its distance, in **both units**
+  (ft/mi + m/km) or **locked to one** (e.g. always feet); switchable live, with a
+  cursor preview. **Hold** pins a measurement to the map.
 - **Temp markers** — drop on-map annotation markers (name, note, color, icon) in a
   session-only **Annotations** layer; click one to read its note.
 - **Per-layer tooltips** — include/exclude fields by regex, hide empty values, a
@@ -132,7 +132,10 @@ Then **Marker layers (from data) → Add marker layer**:
   **templated links** such as `https://status.example.com/${name}` that
   interpolate the clicked feature's values.
 
-Click a marker to open its tooltip.
+Click a marker to open its tooltip. To build a similar layer quickly, use the
+**copy button** in a layer's card header to duplicate it (all settings, named
+"… (copy)") and then tweak the few things that differ — this works for both marker
+and vector tile layers.
 
 ### 3. Add a vector tile layer (public demo endpoint — no GeoServer needed)
 
@@ -213,7 +216,9 @@ be **visible** to be selected.
 ### Measure distance
 
 Click **Measure**, then click points along a path. The readout shows the running
-distance in both **ft/mi** and **m/km**, with a live segment to the cursor. **Esc**
+distance — **both units** (ft/mi + m/km) by default, or **locked to one** (Feet /
+Miles / Meters / Km) so it won't switch (e.g. stay in feet). Set the default under
+*Map tools → Measurement units*, or change it live from the toolbar dropdown. **Esc**
 or **Clear** resets; the line stays anchored as you pan/zoom. **Hold** pins the
 current measurement to the map so it stays while you do other things (a toolbar chip
 clears held ones).
